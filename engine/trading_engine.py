@@ -1,0 +1,678 @@
+"""
+محرك التداول — Trading Engine
+يربط الاستراتيجية بإدارة المخاطر والتنفيذ والأخبار
+"""
+import time as _time
+import yaml
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from loguru import logger
+
+from execution.broker_adapters.mt5_adapter import MT5Adapter
+from risk.risk_manager import RiskManager
+from storage.database import (
+    SessionLocal, Trade, AccountSnapshot, SignalLog, TradeResult,
+    MarketContext, ScanLog,
+)
+from observability.telegram_notifier import TelegramNotifier
+from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
+
+
+class TradingEngine:
+    """محرك التداول الرئيسي"""
+
+    def __init__(self, config_path: str = "config/base.yaml"):
+        with open(config_path, "r", encoding="utf-8") as f:
+            self.config = yaml.safe_load(f)
+
+        self.adapter = MT5Adapter()
+        self.risk_manager = RiskManager(config_path)
+        self.strategies = []
+        self.instruments = {
+            inst["symbol"]: inst for inst in self.config.get("instruments", [])
+        }
+        self.running = False
+        self._last_ticket = None
+        self.notifier = TelegramNotifier()
+        self.news_filter = None
+        self.scan_count = 0
+
+    def set_news_filter(self, news_filter):
+        """Set news filter for blocking trades during high-impact events."""
+        self.news_filter = news_filter
+        logger.info("News filter enabled")
+
+    def add_strategy(self, strategy):
+        """Register a strategy"""
+        self.strategies.append(strategy)
+        logger.info(f"Strategy registered: {strategy.name}")
+
+    def start(self) -> bool:
+        """Connect to MT5 and initialize"""
+        if not self.adapter.connect():
+            logger.error("Failed to connect to MT5")
+            return False
+
+        account = self.adapter.get_account_info()
+        self.risk_manager.set_balance(account["balance"])
+        self.running = True
+        logger.success(
+            f"Engine started | Balance: ${account['balance']:,.2f} | "
+            f"Strategies: {len(self.strategies)} | "
+            f"Instruments: {list(self.instruments.keys())}"
+        )
+        return True
+
+    def stop(self):
+        """Shutdown engine"""
+        self.running = False
+        self.adapter.disconnect()
+        logger.info("Engine stopped")
+
+    def scan_signals(self) -> list[dict]:
+        """Run all strategies on all instruments, collect all signals (including filtered).
+
+        Also captures multi-timeframe market context and checks news filter.
+        """
+        signals = []
+        tf_config = self.config.get("timeframes", {})
+        primary_tf = tf_config.get("primary", "H1")
+        secondary_tf = tf_config.get("secondary", "H4")
+        confirm_tf = tf_config.get("confirmation", "M15")
+        bars = self.config.get("data", {}).get("history_bars", 500)
+
+        for symbol in self.instruments:
+            # ── Fetch multi-timeframe data ──
+            df_h1 = self.adapter.get_ohlcv(symbol, primary_tf, bars)
+            if df_h1.empty:
+                continue
+
+            df_h4 = self.adapter.get_ohlcv(symbol, secondary_tf, 200)
+            df_m15 = self.adapter.get_ohlcv(symbol, confirm_tf, 100)
+
+            # ── Build market context ──
+            market_ctx = self._build_market_context(symbol, df_h1, df_h4, df_m15)
+
+            # ── Check news filter ──
+            news_blocked = False
+            news_reason = None
+            if self.news_filter:
+                news_blocked, news_reason = self.news_filter.should_block_trading(symbol)
+
+            # ── Run strategies ──
+            for strategy in self.strategies:
+                if hasattr(strategy, "symbol") and strategy.symbol != symbol:
+                    continue
+                signal = strategy.generate_signal(df_h1)
+                if signal:
+                    signal["symbol"] = symbol
+                    # Attach market context
+                    signal["h1_trend"] = market_ctx.get("h1_trend")
+                    signal["h4_trend"] = market_ctx.get("h4_trend")
+                    signal["volatility_regime"] = market_ctx.get("volatility_regime")
+                    signal["spread_at_entry"] = market_ctx.get("spread")
+
+                    # Attach news info
+                    if self.news_filter:
+                        nearby = self.news_filter.get_nearby_events(symbol, window_hours=1.0)
+                        if nearby:
+                            signal["news_nearby"] = True
+                            signal["news_event_name"] = nearby[0]["event_name"]
+                            signal["news_impact"] = nearby[0]["impact"]
+                        else:
+                            signal["news_nearby"] = False
+
+                    # Override status if news blocks
+                    if news_blocked and signal.get("status") == "ACTIVE":
+                        signal["status"] = "NEWS_FILTERED"
+                        signal["news_filter_reason"] = news_reason
+
+                    # Save market context with signal info
+                    market_ctx["signal_action"] = signal["action"]
+                    market_ctx["signal_status"] = signal["status"]
+                    signals.append(signal)
+
+            # Save market context snapshot (even without signals)
+            self._save_market_context(symbol, market_ctx)
+
+        return signals
+
+    def _build_market_context(self, symbol: str, df_h1: pd.DataFrame,
+                              df_h4: pd.DataFrame, df_m15: pd.DataFrame) -> dict:
+        """Build multi-timeframe market context for a symbol."""
+        ctx = {"symbol": symbol}
+
+        # ── H1 context ──
+        try:
+            h1 = df_h1.copy()
+            h1 = add_sma(h1, 20)
+            h1 = add_sma(h1, 50)
+            h1 = add_rsi(h1, 14)
+            h1 = add_atr(h1, 14)
+            h1 = add_macd(h1)
+            h1 = add_bollinger_bands(h1, 20)
+
+            last = h1.iloc[-1]
+            ctx["h1_close"] = float(last["close"])
+            ctx["h1_atr"] = float(last.get("atr_14", 0))
+            ctx["h1_rsi"] = float(last.get("rsi_14", 50))
+            ctx["h1_sma_fast"] = float(last.get("sma_20", 0))
+            ctx["h1_sma_slow"] = float(last.get("sma_50", 0))
+            ctx["h1_macd"] = float(last.get("macd", 0))
+            ctx["h1_macd_signal"] = float(last.get("macd_signal", 0))
+
+            # Bollinger position
+            bb_range = last.get("bb_upper", 0) - last.get("bb_lower", 0)
+            if bb_range > 0:
+                ctx["h1_bb_position"] = float((last["close"] - last.get("bb_lower", 0)) / bb_range)
+
+            # H1 trend
+            if last.get("sma_20", 0) > last.get("sma_50", 0):
+                ctx["h1_trend"] = "UP"
+            elif last.get("sma_20", 0) < last.get("sma_50", 0):
+                ctx["h1_trend"] = "DOWN"
+            else:
+                ctx["h1_trend"] = "RANGE"
+
+            # Volatility regime (ATR relative to 20-period average)
+            atr_series = h1["atr_14"].dropna()
+            if len(atr_series) >= 20:
+                atr_avg = atr_series.tail(20).mean()
+                atr_current = float(last.get("atr_14", 0))
+                if atr_current > atr_avg * 1.3:
+                    ctx["volatility_regime"] = "HIGH"
+                elif atr_current < atr_avg * 0.7:
+                    ctx["volatility_regime"] = "LOW"
+                else:
+                    ctx["volatility_regime"] = "NORMAL"
+        except Exception as e:
+            logger.debug(f"H1 context error for {symbol}: {e}")
+
+        # ── H4 context ──
+        try:
+            if not df_h4.empty and len(df_h4) >= 50:
+                h4 = df_h4.copy()
+                h4 = add_sma(h4, 50)
+                h4 = add_sma(h4, 200)
+                h4 = add_rsi(h4, 14)
+                h4 = add_atr(h4, 14)
+
+                last4 = h4.iloc[-1]
+                ctx["h4_close"] = float(last4["close"])
+                ctx["h4_atr"] = float(last4.get("atr_14", 0))
+                ctx["h4_rsi"] = float(last4.get("rsi_14", 50))
+                ctx["h4_sma_50"] = float(last4.get("sma_50", 0))
+                ctx["h4_sma_200"] = float(last4.get("sma_200", 0)) if "sma_200" in last4 else None
+
+                if last4.get("sma_50", 0) > last4.get("sma_200", last4.get("sma_50", 0)):
+                    ctx["h4_trend"] = "UP"
+                elif last4.get("sma_50", 0) < last4.get("sma_200", last4.get("sma_50", 0)):
+                    ctx["h4_trend"] = "DOWN"
+                else:
+                    ctx["h4_trend"] = "RANGE"
+        except Exception as e:
+            logger.debug(f"H4 context error for {symbol}: {e}")
+
+        # ── M15 context ──
+        try:
+            if not df_m15.empty and len(df_m15) >= 14:
+                m15 = df_m15.copy()
+                m15 = add_rsi(m15, 14)
+                m15 = add_atr(m15, 14)
+
+                last15 = m15.iloc[-1]
+                ctx["m15_close"] = float(last15["close"])
+                ctx["m15_rsi"] = float(last15.get("rsi_14", 50))
+                ctx["m15_atr"] = float(last15.get("atr_14", 0))
+        except Exception as e:
+            logger.debug(f"M15 context error for {symbol}: {e}")
+
+        # ── Spread ──
+        try:
+            tick = self.adapter.get_tick(symbol)
+            if tick:
+                ctx["spread"] = tick.get("spread", 0)
+        except Exception:
+            pass
+
+        return ctx
+
+    def _save_market_context(self, symbol: str, ctx: dict):
+        """Save market context snapshot to database."""
+        session = SessionLocal()
+        try:
+            mc = MarketContext(
+                symbol=symbol,
+                h1_close=ctx.get("h1_close"),
+                h1_atr=ctx.get("h1_atr"),
+                h1_rsi=ctx.get("h1_rsi"),
+                h1_sma_fast=ctx.get("h1_sma_fast"),
+                h1_sma_slow=ctx.get("h1_sma_slow"),
+                h1_macd=ctx.get("h1_macd"),
+                h1_macd_signal=ctx.get("h1_macd_signal"),
+                h1_bb_position=ctx.get("h1_bb_position"),
+                h4_close=ctx.get("h4_close"),
+                h4_atr=ctx.get("h4_atr"),
+                h4_rsi=ctx.get("h4_rsi"),
+                h4_sma_50=ctx.get("h4_sma_50"),
+                h4_sma_200=ctx.get("h4_sma_200"),
+                h4_trend=ctx.get("h4_trend"),
+                m15_close=ctx.get("m15_close"),
+                m15_rsi=ctx.get("m15_rsi"),
+                m15_atr=ctx.get("m15_atr"),
+                volatility_regime=ctx.get("volatility_regime"),
+                spread=ctx.get("spread"),
+                signal_action=ctx.get("signal_action"),
+                signal_status=ctx.get("signal_status"),
+            )
+            session.add(mc)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Market context save error: {e}")
+        finally:
+            session.close()
+
+    def execute_signal(self, signal: dict) -> tuple[bool, str]:
+        """Validate and execute a single signal.
+
+        Returns (success, reason) for logging purposes.
+        """
+        symbol = signal["symbol"]
+        inst = self.instruments.get(symbol)
+        if not inst:
+            logger.error(f"Unknown instrument: {symbol}")
+            return False, f"Unknown instrument: {symbol}"
+
+        # Check risk limits
+        open_positions = self.adapter.get_open_positions()
+        if not self.risk_manager.can_open_trade(len(open_positions)):
+            return False, "Max positions or daily drawdown limit"
+
+        # Calculate position size using ATR-based stop loss
+        pip_value = inst["pip_value"]
+        entry = signal["price"]
+        sl = signal["stop_loss"]
+        sl_pips = abs(entry - sl) / pip_value
+
+        lot_size = self.risk_manager.calculate_position_size(
+            balance=self.adapter.get_account_info()["balance"],
+            stop_loss_pips=sl_pips,
+            pip_value=pip_value,
+        )
+
+        # Validate trade
+        ok, msg = self.risk_manager.validate_trade(
+            symbol=symbol,
+            order_type=signal["action"],
+            lot_size=lot_size,
+            stop_loss=sl,
+            take_profit=signal["take_profit"],
+            entry_price=entry,
+        )
+        if not ok:
+            logger.warning(f"Trade rejected: {msg}")
+            return False, msg
+
+        # Execute
+        result = self.adapter.place_order(
+            symbol=symbol,
+            order_type=signal["action"],
+            volume=lot_size,
+            stop_loss=sl,
+            take_profit=signal["take_profit"],
+            comment=f"ForexAI-{signal['strategy']}",
+        )
+
+        if result["success"]:
+            # Calculate slippage
+            requested_price = signal["price"]
+            filled_price = result["price"]
+            pip_value = inst["pip_value"]
+            slippage_pips = abs(filled_price - requested_price) / pip_value
+            signal["slippage_pips"] = round(slippage_pips, 2)
+            signal["filled_price"] = filled_price
+            signal["volume"] = lot_size
+
+            self._record_trade(signal, result, lot_size)
+            return True, ""
+
+        return False, result.get("error", "Order failed")
+
+    def _record_trade(self, signal: dict, result: dict, lot_size: float):
+        """Save trade to database"""
+        self._last_ticket = result["ticket"]
+        session = SessionLocal()
+        try:
+            trade = Trade(
+                ticket=result["ticket"],
+                symbol=signal["symbol"],
+                order_type=signal["action"],
+                volume=lot_size,
+                open_price=result["price"],
+                open_time=datetime.now(),
+                stop_loss=signal["stop_loss"],
+                take_profit=signal["take_profit"],
+                strategy=signal["strategy"],
+                comment=signal.get("reason", ""),
+            )
+            session.add(trade)
+            session.commit()
+            logger.info(f"Trade recorded: #{result['ticket']}")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to record trade: {e}")
+        finally:
+            session.close()
+
+    def take_snapshot(self):
+        """Save account snapshot to database"""
+        account = self.adapter.get_account_info()
+        if not account:
+            return
+
+        session = SessionLocal()
+        try:
+            snap = AccountSnapshot(
+                balance=account["balance"],
+                equity=account["equity"],
+                margin=account["margin"],
+                free_margin=account["free_margin"],
+                profit=account["profit"],
+            )
+            session.add(snap)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Snapshot error: {e}")
+        finally:
+            session.close()
+
+    def _log_signal(self, signal: dict, status: str, reason: str = None, ticket: int = None):
+        """Write signal to SignalLog table."""
+        session = SessionLocal()
+        try:
+            log = SignalLog(
+                symbol=signal["symbol"],
+                action=signal["action"],
+                price=signal.get("price"),
+                stop_loss=signal.get("stop_loss"),
+                take_profit=signal.get("take_profit"),
+                atr=signal.get("atr"),
+                rsi=signal.get("rsi"),
+                strategy=signal.get("strategy", ""),
+                status=status,
+                reason=reason,
+                ml_confidence=signal.get("ml_confidence"),
+                ml_threshold=signal.get("ml_threshold"),
+                ticket=ticket,
+                features_json=signal.get("features_json"),
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to log signal: {e}")
+        finally:
+            session.close()
+
+    def check_closed_trades(self):
+        """Check for trades that closed since last scan and record results."""
+        session = SessionLocal()
+        try:
+            # Get open trades from our DB that we haven't recorded results for
+            open_trades = session.query(Trade).filter(Trade.is_closed == False).all()
+            if not open_trades:
+                return
+
+            # Get currently open positions from MT5
+            mt5_positions = self.adapter.get_open_positions()
+            open_tickets = set(mt5_positions["ticket"].tolist()) if not mt5_positions.empty else set()
+
+            for trade in open_trades:
+                if trade.ticket not in open_tickets:
+                    # Trade was closed -- record the result
+                    self._record_trade_result(session, trade)
+
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"check_closed_trades error: {e}")
+        finally:
+            session.close()
+
+    def _record_trade_result(self, session, trade: Trade):
+        """Record a closed trade's final result for ML retraining."""
+        import MetaTrader5 as mt5
+
+        # Try to get the deal from MT5 history
+        now = datetime.now()
+        deals = mt5.history_deals_get(position=trade.ticket)
+
+        close_price = None
+        close_time = None
+        pnl = 0.0
+        exit_reason = "UNKNOWN"
+
+        if deals and len(deals) > 1:
+            # Last deal is the closing deal
+            close_deal = deals[-1]
+            close_price = close_deal.price
+            close_time = datetime.fromtimestamp(close_deal.time)
+            pnl = close_deal.profit + close_deal.swap + close_deal.commission
+
+            # Determine exit reason from comment
+            comment = (close_deal.comment or "").upper()
+            if "SL" in comment or "STOP LOSS" in comment:
+                exit_reason = "SL_HIT"
+            elif "TP" in comment or "TAKE PROFIT" in comment:
+                exit_reason = "TP_HIT"
+            else:
+                exit_reason = "MANUAL"
+        else:
+            # Fallback: estimate from trade record
+            close_time = now
+            exit_reason = "UNKNOWN"
+
+        # Calculate pips
+        inst = self.instruments.get(trade.symbol)
+        pip_value = inst["pip_value"] if inst else 0.0001
+        if close_price and trade.open_price:
+            if trade.order_type == "BUY":
+                pnl_pips = (close_price - trade.open_price) / pip_value
+            else:
+                pnl_pips = (trade.open_price - close_price) / pip_value
+        else:
+            pnl_pips = 0.0
+
+        # Update trade record
+        trade.close_price = close_price
+        trade.close_time = close_time
+        trade.profit = pnl
+        trade.is_closed = True
+
+        # Calculate trade duration
+        duration_minutes = None
+        if trade.open_time and close_time:
+            duration_minutes = int((close_time - trade.open_time).total_seconds() / 60)
+
+        # Calculate planned R:R ratio
+        rr_planned = None
+        if trade.stop_loss and trade.take_profit and trade.open_price:
+            sl_dist = abs(trade.open_price - trade.stop_loss)
+            tp_dist = abs(trade.take_profit - trade.open_price)
+            if sl_dist > 0:
+                rr_planned = round(tp_dist / sl_dist, 2)
+
+        # Calculate actual R:R ratio
+        rr_actual = None
+        if trade.stop_loss and close_price and trade.open_price:
+            sl_dist = abs(trade.open_price - trade.stop_loss)
+            if sl_dist > 0:
+                actual_dist = abs(close_price - trade.open_price)
+                rr_actual = round(actual_dist / sl_dist, 2)
+                if pnl < 0:
+                    rr_actual = -rr_actual
+
+        # Write to TradeResult for ML retraining
+        result = TradeResult(
+            ticket=trade.ticket,
+            symbol=trade.symbol,
+            action=trade.order_type,
+            open_price=trade.open_price,
+            close_price=close_price,
+            open_time=trade.open_time,
+            close_time=close_time,
+            pnl=pnl,
+            pnl_pips=round(pnl_pips, 1),
+            exit_reason=exit_reason,
+            profitable=(pnl > 0),
+            strategy=trade.strategy,
+            volume=trade.volume,
+            swap=trade.swap,
+            commission=trade.commission,
+            trade_duration_minutes=duration_minutes,
+            risk_reward_planned=rr_planned,
+            risk_reward_actual=rr_actual,
+        )
+
+        # Try to attach ML confidence, features, and context from SignalLog
+        signal_log = session.query(SignalLog).filter(
+            SignalLog.ticket == trade.ticket
+        ).first()
+        if signal_log:
+            result.ml_confidence = signal_log.ml_confidence
+            result.features_json = signal_log.features_json
+            result.atr_at_entry = signal_log.atr
+            result.rsi_at_entry = signal_log.rsi
+
+        session.add(result)
+        logger.info(
+            f"Trade result: #{trade.ticket} {trade.symbol} {trade.order_type} | "
+            f"PnL: ${pnl:+.2f} ({pnl_pips:+.1f} pips) | Exit: {exit_reason}"
+        )
+        self.notifier.trade_closed(
+            symbol=trade.symbol, action=trade.order_type,
+            pnl=pnl, pnl_pips=round(pnl_pips, 1),
+            exit_reason=exit_reason, ticket=trade.ticket,
+        )
+
+    def run_once(self) -> list[dict]:
+        """Run one scan cycle: generate signals -> log -> execute -> check closed.
+
+        Saves comprehensive scan log with signal counts and timing.
+        """
+        if not self.running:
+            logger.warning("Engine not running")
+            return []
+
+        self.scan_count += 1
+        scan_start = _time.time()
+
+        # Update P&L
+        account = self.adapter.get_account_info()
+        self.risk_manager.update_pnl(account.get("profit", 0))
+
+        # Save news events to DB (if filter active)
+        if self.news_filter:
+            self.news_filter.save_events_to_db()
+
+        # Check for trades that closed since last scan
+        self.check_closed_trades()
+
+        signals = self.scan_signals()
+        executed = []
+
+        # Track signal counts for scan log
+        counts = {
+            "total": len(signals), "active": 0, "ml_filtered": 0,
+            "news_filtered": 0, "risk_rejected": 0, "executed": 0,
+        }
+        news_block_event = None
+
+        for signal in signals:
+            status = signal.get("status", "ACTIVE")
+
+            # ML-filtered signals: log and skip
+            if status == "ML_FILTERED":
+                counts["ml_filtered"] += 1
+                self._log_signal(signal, "ML_FILTERED",
+                                 reason=f"ML confidence {signal.get('ml_confidence', 0):.1%} < threshold")
+                continue
+
+            # News-filtered signals: log and skip
+            if status == "NEWS_FILTERED":
+                counts["news_filtered"] += 1
+                news_block_event = signal.get("news_filter_reason", "")
+                self._log_signal(signal, "NEWS_FILTERED",
+                                 reason=signal.get("news_filter_reason", "High-impact news"))
+                self.notifier.signal_filtered(
+                    signal, reason=f"NEWS: {signal.get('news_filter_reason', '')}")
+                continue
+
+            counts["active"] += 1
+
+            # Active signals: try to execute
+            logger.info(
+                f"Signal: {signal['action']} {signal['symbol']} | "
+                f"{signal['reason']}"
+            )
+            success, reject_reason = self.execute_signal(signal)
+
+            if success:
+                counts["executed"] += 1
+                ticket = self._last_ticket
+                self._log_signal(signal, "EXECUTED", ticket=ticket)
+                self.notifier.signal_executed(signal, ticket=ticket)
+                executed.append(signal)
+            else:
+                counts["risk_rejected"] += 1
+                self._log_signal(signal, "RISK_REJECTED", reason=reject_reason)
+                self.notifier.signal_filtered(signal, reason=reject_reason)
+
+        self.take_snapshot()
+
+        # ── Save scan log ──
+        scan_duration = int((_time.time() - scan_start) * 1000)
+        positions = self.adapter.get_open_positions()
+        self._save_scan_log(
+            scan_duration=scan_duration,
+            counts=counts,
+            open_positions=len(positions) if not positions.empty else 0,
+            account=account,
+            news_blocked=counts["news_filtered"] > 0,
+            news_event=news_block_event,
+        )
+
+        return executed
+
+    def _save_scan_log(self, scan_duration: int, counts: dict,
+                       open_positions: int, account: dict,
+                       news_blocked: bool, news_event: str = None):
+        """Save scan cycle log to database."""
+        session = SessionLocal()
+        try:
+            log = ScanLog(
+                scan_number=self.scan_count,
+                duration_ms=scan_duration,
+                symbols_scanned=len(self.instruments),
+                signals_total=counts["total"],
+                signals_active=counts["active"],
+                signals_ml_filtered=counts["ml_filtered"],
+                signals_news_filtered=counts["news_filtered"],
+                signals_risk_rejected=counts["risk_rejected"],
+                signals_executed=counts["executed"],
+                open_positions=open_positions,
+                balance=account.get("balance"),
+                equity=account.get("equity"),
+                news_blocked=news_blocked,
+                news_event_name=news_event,
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Scan log save error: {e}")
+        finally:
+            session.close()

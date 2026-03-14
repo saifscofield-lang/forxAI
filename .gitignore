@@ -1,0 +1,28 @@
+# بيانات حساسة — لا ترفعها أبداً
+.env
+
+# البيئة الافتراضية
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# قاعدة البيانات والبيانات
+data/trading.db
+data/logs/
+data/raw/
+data/processed/
+data/models/
+
+# ملفات Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/settings.json
+.idea/

@@ -1,0 +1,17 @@
+# ============================================================
+# المرحلة 6 — واجهة برمجة التطبيقات والمراقبة
+# Phase 6 — API & Monitoring
+# تثبيت: pip install -r requirements_api.txt
+# ============================================================
+
+# --- REST API ---
+fastapi>=0.109.0         # إطار عمل API سريع
+uvicorn[standard]>=0.27.0  # خادم ASGI
+python-jose[cryptography]>=3.3.0  # JWT للمصادقة
+passlib[bcrypt]>=1.7.4
+
+# --- WebSocket ---
+websockets>=12.0
+
+# --- المراقبة ---
+prometheus-client>=0.19.0  # مقاييس Prometheus

@@ -1,0 +1,6 @@
+Name     : saif scofield
+Type     : Forex Hedged USD
+Server   : MetaQuotes-Demo
+Login    : 5047751974
+Password : !yXwT0Kw
+Investor : -3RqCgKp

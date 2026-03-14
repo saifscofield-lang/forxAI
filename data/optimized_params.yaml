@@ -1,0 +1,28 @@
+EURUSD:
+  fast_period: 45
+  slow_period: 120
+  rsi_period: 7
+  atr_period: 28
+  atr_sl_mult: 2.0
+  atr_tp_mult: 3.5
+GBPUSD:
+  fast_period: 20
+  slow_period: 90
+  rsi_period: 7
+  atr_period: 21
+  atr_sl_mult: 1.0
+  atr_tp_mult: 5.0
+USDJPY:
+  fast_period: 5
+  slow_period: 160
+  rsi_period: 7
+  atr_period: 14
+  atr_sl_mult: 1.0
+  atr_tp_mult: 5.0
+XAUUSD:
+  fast_period: 40
+  slow_period: 50
+  rsi_period: 21
+  atr_period: 7
+  atr_sl_mult: 1.25
+  atr_tp_mult: 2.75

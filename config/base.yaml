@@ -1,0 +1,48 @@
+# ============================================================
+# الإعدادات الأساسية للنظام
+# ============================================================
+
+system:
+  name: "ForexAI Trading Platform"
+  version: "0.1.0"
+  mode: "paper"              # paper | live
+
+# --- الأدوات المالية ---
+instruments:
+  - symbol: "EURUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "GBPUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDJPY"
+    digits: 3
+    pip_value: 0.01
+  - symbol: "XAUUSD"         # ذهب
+    digits: 2
+    pip_value: 0.01
+
+# --- الإطار الزمني الافتراضي ---
+timeframes:
+  primary: "H1"              # ساعة — للإشارات
+  secondary: "H4"            # 4 ساعات — للاتجاه العام
+  confirmation: "M15"        # 15 دقيقة — للدخول
+
+# --- إدارة المخاطر ---
+risk:
+  max_risk_per_trade: 0.01   # 1%
+  max_daily_drawdown: 0.05   # 5%
+  max_open_positions: 5
+  max_correlated_positions: 2
+
+# --- جلب البيانات ---
+data:
+  history_bars: 1000         # عدد الشموع التاريخية
+  update_interval_seconds: 5 # تحديث كل 5 ثواني
+
+# --- التسجيل ---
+logging:
+  level: "INFO"
+  file: "data/logs/system.log"
+  rotation: "10 MB"
+  retention: "30 days"

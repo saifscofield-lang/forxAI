@@ -1,0 +1,27 @@
+EURUSD:
+  strategy: sma_crossover_ml_filtered
+  confidence_threshold: 0.5
+  test_pf: 1.484
+  test_sharpe: 0.823
+  test_trades: 58
+  test_win_rate: 46.6
+  ml_precision: 0.458
+  trades_filtered: 75
+GBPUSD:
+  strategy: sma_crossover_ml_filtered
+  confidence_threshold: 0.55
+  test_pf: 1.226
+  test_sharpe: 0.217
+  test_trades: 19
+  test_win_rate: 21.1
+  ml_precision: 0.2
+  trades_filtered: 157
+XAUUSD:
+  strategy: sma_crossover_ml_filtered
+  confidence_threshold: 0.5
+  test_pf: 1.599
+  test_sharpe: 1.046
+  test_trades: 78
+  test_win_rate: 35.9
+  ml_precision: 0.358
+  trades_filtered: 349

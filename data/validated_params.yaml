@@ -1,0 +1,12 @@
+GBPUSD:
+  params:
+    fast_period: 30
+    slow_period: 80
+    rsi_period: 28
+    atr_period: 7
+    atr_sl_mult: 3.0
+    atr_tp_mult: 4.75
+  train_pf: 1.216
+  test_pf: 1.084
+  train_sharpe: 0.721
+  test_sharpe: 0.359
