@@ -5,7 +5,7 @@ Run this on the TRADING computer (the one running paper_trade.py).
 Setup:
 1. Install Google Drive for Desktop: https://www.google.com/drive/download/
 2. Sign in with your Google account
-3. Google Drive will appear as a drive letter (e.g., G:\)
+3. Google Drive will appear as a drive letter (e.g., G:)
 4. Update GDRIVE_PATH below if your drive letter is different
 """
 
