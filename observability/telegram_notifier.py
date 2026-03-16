@@ -96,6 +96,31 @@ class TelegramNotifier:
         """Notify: bot stopped."""
         self.send("<b>ForexAI Bot STOPPED</b>")
 
+    def scan_summary(self, scan_number: int, account: dict, open_positions: int,
+                     executed: list = None, blocked_symbols: list = None):
+        """Notify: scan cycle completed."""
+        signals_text = "None"
+        if executed:
+            lines = []
+            for sig in executed:
+                lines.append(f"  {sig['action']} {sig['symbol']} | SL={sig['stop_loss']} TP={sig['take_profit']}")
+            signals_text = "\n".join(lines)
+
+        news_text = "None"
+        if blocked_symbols:
+            news_text = ", ".join(blocked_symbols)
+
+        msg = (
+            f"<b>SCAN #{scan_number}</b>\n"
+            f"Balance: ${account.get('balance', 0):,.2f}\n"
+            f"Equity: ${account.get('equity', 0):,.2f}\n"
+            f"P&L: ${account.get('profit', 0):+,.2f}\n"
+            f"Open Positions: {open_positions}\n"
+            f"News Blocks: {news_text}\n"
+            f"Signals: {signals_text}"
+        )
+        self.send(msg)
+
     def daily_summary(self, balance: float, equity: float, profit: float,
                       open_positions: int, trades_today: int):
         """Notify: daily summary."""

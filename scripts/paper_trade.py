@@ -186,6 +186,16 @@ def scan_and_trade():
         else:
             logger.info("No executed signals this scan")
 
+        # Send Telegram scan summary
+        open_count = 0 if positions is None or (hasattr(positions, 'empty') and positions.empty) else len(positions)
+        engine.notifier.scan_summary(
+            scan_number=scan_count,
+            account=account,
+            open_positions=open_count,
+            executed=executed,
+            blocked_symbols=blocked_symbols if blocked_symbols else None,
+        )
+
         logger.info(f"Scan #{scan_count} complete")
 
         # Auto-sync data to Google Drive every 6 scans (~6 hours)
