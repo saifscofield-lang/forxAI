@@ -12,6 +12,9 @@ import os
 sys.path.insert(0, ".")
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import signal as sig
 import time
 import yaml
