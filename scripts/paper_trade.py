@@ -188,6 +188,16 @@ def scan_and_trade():
 
         logger.info(f"Scan #{scan_count} complete")
 
+        # Auto-sync data to Google Drive every 6 scans (~6 hours)
+        if scan_count % 6 == 0:
+            try:
+                from scripts.sync_upload import sync_upload
+                logger.info("Auto-syncing data to Google Drive...")
+                sync_upload()
+                logger.info("Data sync complete")
+            except Exception as sync_err:
+                logger.warning(f"Data sync failed (non-critical): {sync_err}")
+
     except Exception as e:
         logger.error(f"Scan error: {e}")
 
