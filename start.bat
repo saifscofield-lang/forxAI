@@ -11,9 +11,9 @@ echo.
 echo  Starting services...
 echo.
 
-REM ── 1. Start Trading Bot in a new window ─────────────────────────
+REM ── 1. Start Trading Bot in a new window (auto-restart on crash) ──
 echo  [1/2] Starting Trading Bot (Paper Trading + Telegram)...
-start "ForexAI Bot" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && python scripts\paper_trade.py"
+start "ForexAI Bot" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && for /L %%x in () do (python scripts\paper_trade.py && exit /b || echo [!] Crashed. Restarting in 30s... && timeout /t 30 /nobreak)"
 
 REM Wait 3 seconds for the bot to initialize
 timeout /t 3 /nobreak >nul

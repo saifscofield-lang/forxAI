@@ -159,6 +159,7 @@ class TradingEngine:
                         signal["news_filter_reason"] = news_reason
                         detail["signal_status"] = "NEWS_FILTERED"
 
+                    signal.setdefault("status", "ACTIVE")
                     market_ctx["signal_action"] = signal["action"]
                     market_ctx["signal_status"] = signal["status"]
                     signals.append(signal)
