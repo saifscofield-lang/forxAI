@@ -288,10 +288,60 @@ class SymbolScanDetail(Base):
     )
 
 
+class IndicatorSnapshot(Base):
+    """لقطة كاملة للمؤشرات عند كل فحص — لتدريب ML حتى بدون إشارات."""
+    __tablename__ = "indicator_snapshots"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    time            = Column(DateTime, default=datetime.utcnow)
+    scan_number     = Column(Integer)
+    symbol          = Column(String(20), nullable=False)
+    timeframe       = Column(String(10), default="M15")
+    features_json   = Column(Text, nullable=True)    # Full build_features output as JSON
+    price           = Column(Float, nullable=True)
+    rsi_14          = Column(Float, nullable=True)
+    atr_14          = Column(Float, nullable=True)
+    macd            = Column(Float, nullable=True)
+    macd_signal     = Column(Float, nullable=True)
+    bb_position     = Column(Float, nullable=True)
+    sma_20          = Column(Float, nullable=True)
+    sma_50          = Column(Float, nullable=True)
+    ema_12          = Column(Float, nullable=True)
+    ema_26          = Column(Float, nullable=True)
+    volatility_10   = Column(Float, nullable=True)
+    return_1        = Column(Float, nullable=True)
+    return_5        = Column(Float, nullable=True)
+    volume_ratio    = Column(Float, nullable=True)
+    h1_trend        = Column(String(10), nullable=True)
+    h4_trend        = Column(String(10), nullable=True)
+    signal_fired    = Column(Boolean, default=False)
+    signal_action   = Column(String(10), nullable=True)
+    signal_strategy = Column(String(50), nullable=True)
+
+    __table_args__ = (
+        Index("ix_snap_symbol_time", "symbol", "time"),
+    )
+
+
 def init_db():
     """إنشاء جداول قاعدة البيانات"""
     os.makedirs("data", exist_ok=True)
     Base.metadata.create_all(engine)
+
+    # Add missing columns to existing tables (migration)
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        # Check and add details_json to scan_logs if missing
+        c.execute("PRAGMA table_info(scan_logs)")
+        cols = [r[1] for r in c.fetchall()]
+        if "details_json" not in cols:
+            c.execute("ALTER TABLE scan_logs ADD COLUMN details_json TEXT")
+            conn.commit()
+        conn.close()
+
     print("Database ready")
 
 

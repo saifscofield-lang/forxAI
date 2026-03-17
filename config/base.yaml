@@ -1,13 +1,13 @@
 # ============================================================
-# الإعدادات الأساسية للنظام
+# الإعدادات الأساسية للنظام — وضع جمع البيانات العدواني
 # ============================================================
 
 system:
   name: "ForexAI Trading Platform"
-  version: "0.1.0"
+  version: "0.2.0"
   mode: "paper"              # paper | live
 
-# --- الأدوات المالية ---
+# --- الأدوات المالية (8 أزواج لزيادة البيانات) ---
 instruments:
   - symbol: "EURUSD"
     digits: 5
@@ -21,24 +21,36 @@ instruments:
   - symbol: "XAUUSD"         # ذهب
     digits: 2
     pip_value: 0.01
+  - symbol: "AUDUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCAD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "NZDUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCHF"
+    digits: 5
+    pip_value: 0.0001
 
-# --- الإطار الزمني الافتراضي ---
+# --- الإطار الزمني ---
 timeframes:
-  primary: "H1"              # ساعة — للإشارات
-  secondary: "H4"            # 4 ساعات — للاتجاه العام
-  confirmation: "M15"        # 15 دقيقة — للدخول
+  primary: "M15"             # 15 دقيقة — للإشارات (سريع لجمع البيانات)
+  secondary: "H1"            # ساعة — للاتجاه العام
+  confirmation: "M5"         # 5 دقائق — للدخول
 
-# --- إدارة المخاطر ---
+# --- إدارة المخاطر (مخففة — حساب ديمو لجمع البيانات) ---
 risk:
-  max_risk_per_trade: 0.01   # 1%
-  max_daily_drawdown: 0.05   # 5%
-  max_open_positions: 5
-  max_correlated_positions: 2
+  max_risk_per_trade: 0.02   # 2% per trade
+  max_daily_drawdown: 1.0    # 100% — disabled for demo
+  max_open_positions: 50     # السماح بصفقات كثيرة
+  max_correlated_positions: 10
 
 # --- جلب البيانات ---
 data:
   history_bars: 1000         # عدد الشموع التاريخية
-  update_interval_seconds: 5 # تحديث كل 5 ثواني
+  update_interval_seconds: 5
 
 # --- التسجيل ---
 logging:

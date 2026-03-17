@@ -2,6 +2,7 @@
 محرك التداول — Trading Engine
 يربط الاستراتيجية بإدارة المخاطر والتنفيذ والأخبار
 """
+import json
 import time as _time
 import yaml
 import numpy as np
@@ -13,7 +14,7 @@ from execution.broker_adapters.mt5_adapter import MT5Adapter
 from risk.risk_manager import RiskManager
 from storage.database import (
     SessionLocal, Trade, AccountSnapshot, SignalLog, TradeResult,
-    MarketContext, ScanLog, SymbolScanDetail,
+    MarketContext, ScanLog, SymbolScanDetail, IndicatorSnapshot,
 )
 from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
@@ -116,13 +117,17 @@ class TradingEngine:
             detail["volatility"] = market_ctx.get("volatility_regime")
 
             # ── Compute SMA diagnostic for this symbol ──
+            # Track all signals from all strategies for this symbol
+            symbol_signals = []
+
             for strategy in self.strategies:
                 if hasattr(strategy, "symbol") and strategy.symbol != symbol:
                     continue
 
-                # Get SMA diagnostic before generating signal
-                sma_diag = self._diagnose_sma(df_h1, strategy)
-                detail.update(sma_diag)
+                # Get SMA diagnostic only for strategies with SMA params
+                if hasattr(strategy, "fast_period") and hasattr(strategy, "slow_period"):
+                    sma_diag = self._diagnose_sma(df_h1, strategy)
+                    detail.update(sma_diag)
 
                 signal = strategy.generate_signal(df_h1)
                 if signal:
@@ -135,6 +140,10 @@ class TradingEngine:
                     signal["h4_trend"] = market_ctx.get("h4_trend")
                     signal["volatility_regime"] = market_ctx.get("volatility_regime")
                     signal["spread_at_entry"] = market_ctx.get("spread")
+
+                    # Attach feature snapshot for ML training
+                    if not signal.get("features_json"):
+                        signal["features_json"] = self._build_feature_snapshot(df_h1)
 
                     if self.news_filter:
                         nearby = self.news_filter.get_nearby_events(symbol, window_hours=1.0)
@@ -153,32 +162,23 @@ class TradingEngine:
                     market_ctx["signal_action"] = signal["action"]
                     market_ctx["signal_status"] = signal["status"]
                     signals.append(signal)
-                else:
-                    # Build detailed rejection reason
-                    reasons = []
-                    cross = detail.get("crossover", "NONE")
-                    if cross == "NONE":
-                        gap = detail.get("sma_gap_pct", 0)
-                        direction = "above" if gap > 0 else "below"
-                        reasons.append(f"No SMA crossover (fast {direction} slow by {abs(gap):.3f}%)")
-                        cross_dist = detail.get("cross_distance", 0)
-                        reasons.append(f"Distance to cross: {abs(cross_dist):.1f} pips")
-                    rsi_val = detail.get("rsi")
-                    if rsi_val is not None:
-                        if rsi_val >= 70:
-                            reasons.append(f"RSI overbought ({rsi_val:.1f})")
-                        elif rsi_val <= 30:
-                            reasons.append(f"RSI oversold ({rsi_val:.1f})")
-                    detail["rejection_reason"] = " | ".join(reasons) if reasons else "No crossover"
+                    symbol_signals.append(signal)
 
-                    logger.info(
-                        f"[{symbol}] NO SIGNAL | "
-                        f"SMA_fast={detail.get('sma_fast', 0):.5f} SMA_slow={detail.get('sma_slow', 0):.5f} "
-                        f"gap={detail.get('sma_gap_pct', 0):+.3f}% | "
-                        f"RSI={detail.get('rsi', 0):.1f} | ATR={detail.get('atr', 0):.5f} | "
-                        f"H1={detail.get('h1_trend')} H4={detail.get('h4_trend')} | "
-                        f"Reason: {detail['rejection_reason']}"
-                    )
+            # Save indicator snapshot for this symbol (regardless of signals)
+            self._save_indicator_snapshot(
+                symbol, df_h1, market_ctx,
+                signal_fired=len(symbol_signals) > 0,
+                signal_action=symbol_signals[0]["action"] if symbol_signals else None,
+                signal_strategy=symbol_signals[0].get("strategy") if symbol_signals else None,
+            )
+
+            if not symbol_signals:
+                # Log no-signal info
+                logger.info(
+                    f"[{symbol}] NO SIGNAL | "
+                    f"RSI={detail.get('rsi', 0):.1f} | ATR={detail.get('atr', 0):.5f} | "
+                    f"H1={detail.get('h1_trend')} H4={detail.get('h4_trend')}"
+                )
 
             self._save_market_context(symbol, market_ctx)
             scan_details.append(detail)
@@ -223,7 +223,7 @@ class TradingEngine:
             diag["sma_gap_pct"] = ((sma_fast - sma_slow) / sma_slow) * 100 if sma_slow else 0
             diag["rsi"] = float(curr[rsi_col])
             diag["atr"] = float(curr[atr_col])
-            diag["macd"] = float(curr.get("macd", 0))
+            diag["macd"] = float(curr.get("macd_line", 0))
             diag["macd_signal"] = float(curr.get("macd_signal", 0))
 
             # Bollinger position
@@ -272,7 +272,7 @@ class TradingEngine:
             ctx["h1_rsi"] = float(last.get("rsi_14", 50))
             ctx["h1_sma_fast"] = float(last.get("sma_20", 0))
             ctx["h1_sma_slow"] = float(last.get("sma_50", 0))
-            ctx["h1_macd"] = float(last.get("macd", 0))
+            ctx["h1_macd"] = float(last.get("macd_line", 0))
             ctx["h1_macd_signal"] = float(last.get("macd_signal", 0))
 
             # Bollinger position
@@ -384,6 +384,67 @@ class TradingEngine:
         except Exception as e:
             session.rollback()
             logger.debug(f"Market context save error: {e}")
+        finally:
+            session.close()
+
+    def _build_feature_snapshot(self, df: pd.DataFrame) -> str | None:
+        """Build full ML feature snapshot as JSON for any signal."""
+        try:
+            from features.ml.feature_engine import build_features, get_feature_columns
+            feat_df = build_features(df, dropna=True)
+            if len(feat_df) > 0:
+                cols = get_feature_columns(feat_df)
+                row = feat_df[cols].iloc[-1]
+                return json.dumps({k: round(float(v), 6) for k, v in row.items()})
+        except Exception:
+            pass
+        return None
+
+    def _save_indicator_snapshot(self, symbol: str, df: pd.DataFrame,
+                                 market_ctx: dict, signal_fired: bool = False,
+                                 signal_action: str = None,
+                                 signal_strategy: str = None):
+        """Save full indicator snapshot for every scan — even without signals."""
+        session = SessionLocal()
+        try:
+            from features.ml.feature_engine import build_features, get_feature_columns
+            feat_df = build_features(df, dropna=True)
+            features_json = None
+            snap_data = {}
+            if len(feat_df) > 0:
+                cols = get_feature_columns(feat_df)
+                row = feat_df[cols].iloc[-1]
+                features_json = json.dumps({k: round(float(v), 6) for k, v in row.items()})
+                snap_data = {c: float(row[c]) for c in cols if c in row.index}
+
+            snap = IndicatorSnapshot(
+                scan_number=self.scan_count,
+                symbol=symbol,
+                features_json=features_json,
+                price=float(df.iloc[-1]["close"]) if len(df) > 0 else None,
+                rsi_14=snap_data.get("rsi_14"),
+                atr_14=snap_data.get("atr_14_pct"),
+                macd=snap_data.get("macd"),
+                macd_signal=snap_data.get("macd_signal"),
+                bb_position=snap_data.get("bb_position"),
+                sma_20=snap_data.get("close_vs_sma_20"),
+                sma_50=snap_data.get("close_vs_sma_50"),
+                ema_12=snap_data.get("ema_12_26_diff"),
+                volatility_10=snap_data.get("volatility_10"),
+                return_1=snap_data.get("return_1"),
+                return_5=snap_data.get("return_5"),
+                volume_ratio=snap_data.get("volume_ratio"),
+                h1_trend=market_ctx.get("h1_trend"),
+                h4_trend=market_ctx.get("h4_trend"),
+                signal_fired=signal_fired,
+                signal_action=signal_action,
+                signal_strategy=signal_strategy,
+            )
+            session.add(snap)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Indicator snapshot error: {e}")
         finally:
             session.close()
 

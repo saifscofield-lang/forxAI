@@ -13,6 +13,7 @@ class SMACrossoverStrategy:
 
     def __init__(
         self,
+        symbol: str = "",
         fast_period: int = 20,
         slow_period: int = 50,
         rsi_period: int = 14,
@@ -21,6 +22,7 @@ class SMACrossoverStrategy:
         atr_tp_multiplier: float = 2.0,
     ):
         self.name = "sma_crossover"
+        self.symbol = symbol
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.rsi_period = rsi_period
@@ -72,7 +74,7 @@ class SMACrossoverStrategy:
                 tp = price + atr * self.atr_tp_multiplier
                 signal = {
                     "action": "BUY",
-                    "symbol": curr.get("symbol", ""),
+                    "symbol": self.symbol or curr.get("symbol", ""),
                     "price": price,
                     "stop_loss": round(sl, 5),
                     "take_profit": round(tp, 5),
@@ -91,7 +93,7 @@ class SMACrossoverStrategy:
                 tp = price - atr * self.atr_tp_multiplier
                 signal = {
                     "action": "SELL",
-                    "symbol": curr.get("symbol", ""),
+                    "symbol": self.symbol or curr.get("symbol", ""),
                     "price": price,
                     "stop_loss": round(sl, 5),
                     "take_profit": round(tp, 5),

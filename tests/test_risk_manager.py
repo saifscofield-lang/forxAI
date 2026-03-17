@@ -68,6 +68,6 @@ class TestValidateTrade:
         assert ok is False
 
     def test_rejects_bad_rr(self, rm):
-        # Risk 100 pips, reward 50 pips = 0.5 RR
-        ok, msg = rm.validate_trade("EURUSD", "BUY", 0.1, 1.09, 1.105, 1.10)
+        # Risk 100 pips, reward 20 pips = 0.2 RR (below 0.3 minimum)
+        ok, msg = rm.validate_trade("EURUSD", "BUY", 0.1, 1.09, 1.102, 1.10)
         assert ok is False

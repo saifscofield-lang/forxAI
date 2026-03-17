@@ -1,7 +1,7 @@
 """
-Paper Trading Loop -- ForexAI
-Runs SMA Crossover + ML Filter strategy on MT5 Demo account.
-Scans every hour on H1 candle close, executes trades, logs everything.
+Paper Trading Loop -- ForexAI (Aggressive Data Collection Mode)
+Runs 4 strategies on 8 symbols, scans every 15 minutes.
+Goal: maximize trades for ML training data collection.
 
 Usage:
     python scripts/paper_trade.py           # Run continuously
@@ -25,80 +25,38 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from engine.trading_engine import TradingEngine
-from strategies.ml_filtered_strategy import MLFilteredStrategy
+from strategies.sma_crossover import SMACrossoverStrategy
+from strategies.rsi_reversal import RSIReversalStrategy
+from strategies.macd_crossover import MACDCrossoverStrategy
+from strategies.bollinger_bounce import BollingerBounceStrategy
 from storage.database import init_db
 from news.news_filter import NewsFilter
 
 
-# ── Globals ─────────────────────────────────────────────────────────────
+# -- Globals --
 engine: TradingEngine = None
 scheduler: BlockingScheduler = None
 scan_count = 0
 
 
-def load_ml_models():
-    """Load trained LightGBM models for each validated symbol."""
-    import lightgbm as lgb
-
-    models = {}
-    model_dir = "data/models"
-
-    # Load ML-validated config
-    try:
-        with open("data/ml_filtered_validated.yaml", "r") as f:
-            ml_config = yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.warning("No ML validated config found, running without ML filter")
-        return models
-
-    for symbol, cfg in ml_config.items():
-        model_path = f"{model_dir}/{symbol}_lgbm.txt"
-        if os.path.exists(model_path):
-            try:
-                booster = lgb.Booster(model_file=model_path)
-                # Wrap in LGBMClassifier-like interface
-                model = lgb.LGBMClassifier()
-                model._Booster = booster
-                model.fitted_ = True
-                model._n_classes = 2
-                models[symbol] = {
-                    "model": model,
-                    "threshold": cfg.get("confidence_threshold", 0.50),
-                }
-                logger.info(f"  Loaded ML model for {symbol} (threshold={cfg.get('confidence_threshold', 0.50)})")
-            except Exception as e:
-                logger.warning(f"  Failed to load model for {symbol}: {e}")
-        else:
-            logger.warning(f"  No model file for {symbol} at {model_path}")
-
-    return models
-
-
-def create_strategies(config, ml_models):
-    """Create ML-filtered strategies for validated symbols."""
+def create_strategies(config):
+    """Create all strategies for all symbols — no ML filter, maximum signals."""
     strategies = []
 
-    # Load optimized SMA params
+    # Load optimized SMA params (if available)
     try:
         with open("data/optimized_params.yaml", "r") as f:
-            opt_params = yaml.safe_load(f)
+            opt_params = yaml.safe_load(f) or {}
     except FileNotFoundError:
         opt_params = {}
-
-    # ML-validated symbols (use ML filter)
-    try:
-        with open("data/ml_filtered_validated.yaml", "r") as f:
-            ml_validated = yaml.safe_load(f)
-    except FileNotFoundError:
-        ml_validated = {}
 
     instruments = {inst["symbol"]: inst for inst in config.get("instruments", [])}
 
     for symbol in instruments:
         params = opt_params.get(symbol, {})
-        ml_info = ml_models.get(symbol)
 
-        strategy = MLFilteredStrategy(
+        # 1. SMA Crossover (original strategy, uses optimized params)
+        strategies.append(SMACrossoverStrategy(
             symbol=symbol,
             fast_period=int(params.get("fast_period", 20)),
             slow_period=int(params.get("slow_period", 50)),
@@ -106,31 +64,49 @@ def create_strategies(config, ml_models):
             atr_period=int(params.get("atr_period", 14)),
             atr_sl_multiplier=float(params.get("atr_sl_mult", 1.5)),
             atr_tp_multiplier=float(params.get("atr_tp_mult", 2.5)),
-            model=ml_info["model"] if ml_info else None,
-            confidence_threshold=ml_info["threshold"] if ml_info else 0.50,
-        )
+        ))
 
-        ml_status = "ML ON" if ml_info else "NO ML"
+        # 2. RSI Reversal (aggressive, frequent signals)
+        strategies.append(RSIReversalStrategy(
+            symbol=symbol,
+            rsi_period=14,
+            oversold=35.0,
+            overbought=65.0,
+            atr_sl_multiplier=1.0,
+            atr_tp_multiplier=1.5,
+        ))
+
+        # 3. MACD Crossover
+        strategies.append(MACDCrossoverStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=1.2,
+            atr_tp_multiplier=2.0,
+        ))
+
+        # 4. Bollinger Bounce (mean reversion)
+        strategies.append(BollingerBounceStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=1.0,
+            atr_tp_multiplier=1.5,
+        ))
+
         logger.info(
-            f"  {symbol}: SMA {strategy.fast_period}/{strategy.slow_period} | "
-            f"RSI {strategy.rsi_period} | ATR {strategy.atr_period} | "
-            f"SL {strategy.atr_sl_multiplier}x TP {strategy.atr_tp_multiplier}x | "
-            f"{ml_status}"
+            f"  {symbol}: 4 strategies (SMA {params.get('fast_period', 20)}/"
+            f"{params.get('slow_period', 50)}, RSI, MACD, BB)"
         )
-        strategies.append(strategy)
 
     return strategies
 
 
 def scan_and_trade():
-    """Single scan cycle -- called by scheduler every 30 minutes."""
+    """Single scan cycle -- called by scheduler every 15 minutes."""
     global scan_count
     scan_count += 1
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    logger.info(f"{'='*50}")
+    logger.info(f"{'='*60}")
     logger.info(f"Scan #{scan_count} at {now}")
-    logger.info(f"{'='*50}")
+    logger.info(f"{'='*60}")
 
     try:
         # Check MT5 connection
@@ -169,7 +145,6 @@ def scan_and_trade():
                 if blocked:
                     blocked_symbols.append(f"{sym}: {reason}")
 
-            # Get upcoming news for all currencies
             upcoming_news = engine.news_filter.fetch_events(hours_ahead=8, hours_behind=1)
             high_news = [e for e in upcoming_news if e.get("impact") == "HIGH"]
 
@@ -185,20 +160,21 @@ def scan_and_trade():
                 for ev in high_news[:5]:
                     logger.info(f"  [{ev['currency']}] {ev['event_name']} @ {ev['time']}")
 
-        # Run scan cycle (returns executed signals + per-symbol details)
+        # Run scan cycle
         executed, scan_details = engine.run_once()
 
         if executed:
             for sig_info in executed:
                 logger.success(
-                    f"EXECUTED: {sig_info['action']} {sig_info['symbol']} | "
+                    f"EXECUTED: {sig_info['action']} {sig_info['symbol']} "
+                    f"[{sig_info.get('strategy', '?')}] | "
                     f"SL={sig_info['stop_loss']} TP={sig_info['take_profit']} | "
                     f"{sig_info['reason']}"
                 )
         else:
             logger.info("No executed signals this scan")
 
-        # Send detailed Telegram report
+        # Send Telegram report
         open_count = 0 if positions is None or (hasattr(positions, 'empty') and positions.empty) else len(positions)
         engine.notifier.detailed_scan_report(
             scan_number=scan_count,
@@ -211,8 +187,8 @@ def scan_and_trade():
 
         logger.info(f"Scan #{scan_count} complete")
 
-        # Auto-sync data to Google Drive every 12 scans (~6 hours at 30min interval)
-        if scan_count % 12 == 0:
+        # Auto-sync data to Google Drive every 4 scans (~1 hour at 15min interval)
+        if scan_count % 4 == 0:
             try:
                 from scripts.sync_upload import sync_upload
                 logger.info("Auto-syncing data to Google Drive...")
@@ -220,6 +196,16 @@ def scan_and_trade():
                 logger.info("Data sync complete")
             except Exception as sync_err:
                 logger.warning(f"Data sync failed (non-critical): {sync_err}")
+
+        # Export training data every 24 scans (~6 hours)
+        if scan_count % 24 == 0:
+            try:
+                from scripts.export_training_data import export_all
+                logger.info("Exporting ML training data...")
+                export_all()
+                logger.info("Training data export complete")
+            except Exception as export_err:
+                logger.warning(f"Training data export failed (non-critical): {export_err}")
 
     except Exception as e:
         logger.error(f"Scan error: {e}")
@@ -248,7 +234,7 @@ def main():
     parser.add_argument("--once", action="store_true", help="Run one scan and exit")
     args = parser.parse_args()
 
-    # ── Setup logging ───────────────────────────────────────────────
+    # -- Setup logging --
     logger.remove()
     logger.add(
         sys.stdout,
@@ -265,31 +251,28 @@ def main():
         retention="30 days",
     )
 
-    # ── Banner ──────────────────────────────────────────────────────
+    # -- Banner --
     print()
     print("=" * 60)
-    print("     ForexAI Paper Trading")
-    print("     Strategy: SMA Crossover + ML Filter + News Filter")
-    print(f"     Mode: {'Single scan' if args.once else 'Continuous (every 30 min)'}")
+    print("     ForexAI Paper Trading — DATA COLLECTION MODE")
+    print("     Strategies: SMA + RSI + MACD + Bollinger (x8 symbols)")
+    print(f"     Mode: {'Single scan' if args.once else 'Continuous (every 15 min)'}")
     print("=" * 60)
     print()
 
-    # ── Initialize database ─────────────────────────────────────────
+    # -- Initialize database --
     init_db()
 
-    # ── Load config ─────────────────────────────────────────────────
+    # -- Load config --
     with open("config/base.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # ── Load ML models ──────────────────────────────────────────────
-    logger.info("Loading ML models...")
-    ml_models = load_ml_models()
+    # -- Create strategies (no ML filter) --
+    logger.info("Creating strategies (data collection mode — no ML filter)...")
+    strategies = create_strategies(config)
+    logger.info(f"Total strategies: {len(strategies)}")
 
-    # ── Create strategies ───────────────────────────────────────────
-    logger.info("Creating strategies...")
-    strategies = create_strategies(config, ml_models)
-
-    # ── Initialize News Filter ────────────────────────────────────
+    # -- Initialize News Filter --
     symbols = [inst['symbol'] for inst in config['instruments']]
     logger.info("Initializing news filter...")
     news_filter = NewsFilter(
@@ -300,7 +283,7 @@ def main():
     )
     logger.info("  News filter: block 30min before/after HIGH impact events")
 
-    # ── Initialize engine ───────────────────────────────────────────
+    # -- Initialize engine --
     logger.info("Initializing trading engine...")
     engine = TradingEngine()
     engine.set_news_filter(news_filter)
@@ -318,39 +301,41 @@ def main():
     print(f"  Server:  {account['server']}")
     print(f"  Balance: ${account['balance']:,.2f}")
     print(f"  Symbols: {', '.join(symbols)}")
-    print(f"  ML Models: {', '.join(ml_models.keys()) if ml_models else 'None'}")
+    print(f"  Strategies per symbol: 4 (SMA, RSI, MACD, BB)")
+    print(f"  Total strategy instances: {len(strategies)}")
+    print(f"  Scan interval: every 15 minutes")
+    print(f"  Drive sync: every 1 hour")
     print(f"  News Filter: ON (block 30min around HIGH impact)")
     print()
 
     # Telegram notification: bot started
-    engine.notifier.bot_started(account, symbols, list(ml_models.keys()))
+    engine.notifier.bot_started(account, symbols, [])
 
-    # ── Register shutdown handler ───────────────────────────────────
+    # -- Register shutdown handler --
     sig.signal(sig.SIGINT, shutdown)
     sig.signal(sig.SIGTERM, shutdown)
 
     if args.once:
-        # ── Single scan mode ────────────────────────────────────────
         logger.info("Running single scan...")
         scan_and_trade()
         engine.stop()
     else:
-        # ── Continuous mode with APScheduler ────────────────────────
-        logger.info("Starting scheduled paper trading...")
-        logger.info("Schedule: every 30 minutes (at :05 and :35)")
+        # -- Continuous mode --
+        logger.info("Starting scheduled paper trading (DATA COLLECTION)...")
+        logger.info("Schedule: every 15 minutes (at :02, :17, :32, :47)")
         logger.info("Press Ctrl+C to stop")
         print()
 
         # Run first scan immediately
         scan_and_trade()
 
-        # Schedule scans every 30 minutes (at :05 and :35 past each hour)
+        # Schedule scans every 15 minutes
         scheduler = BlockingScheduler()
         scheduler.add_job(
             scan_and_trade,
-            trigger=CronTrigger(minute="5,35"),  # Every 30 min
-            id="scan_30min",
-            name="30-min Scan",
+            trigger=CronTrigger(minute="2,17,32,47"),
+            id="scan_15min",
+            name="15-min Scan",
             misfire_grace_time=300,
         )
 

@@ -108,7 +108,7 @@ class RiskManager:
 
             if risk <= 0:
                 return False, "Invalid stop loss placement"
-            if reward / risk < 1.0:
-                return False, f"Risk/reward {reward/risk:.2f} below 1:1 minimum"
+            if reward / risk < 0.3:
+                return False, f"Risk/reward {reward/risk:.2f} below 0.3 minimum"
 
         return True, "OK"

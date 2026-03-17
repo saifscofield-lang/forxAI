@@ -32,6 +32,7 @@ DIRS_TO_SYNC = [
     PROJECT_ROOT / "data" / "models",
     PROJECT_ROOT / "data" / "raw",
     PROJECT_ROOT / "data" / "logs",
+    PROJECT_ROOT / "data" / "ml_training",
 ]
 
 
