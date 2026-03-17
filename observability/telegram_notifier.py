@@ -133,3 +133,69 @@ class TelegramNotifier:
             f"Trades Today: {trades_today}"
         )
         self.send(msg)
+
+    def detailed_scan_report(self, scan_number: int, account: dict,
+                             open_positions: int, scan_details: list,
+                             executed: list = None, news_events: list = None):
+        """Send detailed scan report with per-symbol analysis."""
+        lines = [f"<b>SCAN #{scan_number} REPORT</b>"]
+        lines.append(f"Balance: ${account.get('balance', 0):,.2f} | Equity: ${account.get('equity', 0):,.2f}")
+        lines.append(f"P&L: ${account.get('profit', 0):+,.2f} | Open: {open_positions}")
+        lines.append("")
+
+        # Per-symbol details
+        for d in scan_details:
+            sym = d.get("symbol", "?")
+            cross = d.get("crossover", "NONE")
+            gap = d.get("sma_gap_pct", 0)
+            rsi = d.get("rsi", 0)
+            atr = d.get("atr", 0)
+            h1 = d.get("h1_trend", "?")
+            h4 = d.get("h4_trend", "?")
+            price = d.get("price", 0)
+
+            # Signal status emoji
+            if d.get("signal_generated"):
+                status_emoji = "SIGNAL"
+                status_text = f"{d.get('signal_action', '?')} [{d.get('signal_status', '?')}]"
+            else:
+                status_emoji = "NO SIGNAL"
+                status_text = d.get("rejection_reason", "No crossover")
+
+            lines.append(f"<b>{sym}</b>")
+            lines.append(f"  Price: {price:.5f}")
+            lines.append(f"  SMA gap: {gap:+.3f}% | Cross: {cross}")
+            if d.get("cross_distance") is not None:
+                lines.append(f"  Dist to cross: {d['cross_distance']:.1f} pips")
+            lines.append(f"  RSI: {rsi:.1f} | ATR: {atr:.5f}")
+            lines.append(f"  Trend H1: {h1} | H4: {h4}")
+            if d.get("news_blocked"):
+                lines.append(f"  NEWS BLOCK: {d.get('news_event', '')}")
+            lines.append(f"  >> {status_emoji}: {status_text}")
+            lines.append("")
+
+        # Upcoming news
+        if news_events:
+            lines.append("<b>UPCOMING NEWS:</b>")
+            for ev in news_events[:5]:
+                impact = ev.get("impact", "?")
+                name = ev.get("event_name", "?")
+                currency = ev.get("currency", "?")
+                ev_time = ev.get("time", "?")
+                lines.append(f"  [{impact}] {currency}: {name} @ {ev_time}")
+            lines.append("")
+
+        # Executed trades
+        if executed:
+            lines.append("<b>EXECUTED:</b>")
+            for sig in executed:
+                lines.append(
+                    f"  {sig['action']} {sig['symbol']} | "
+                    f"SL={sig['stop_loss']} TP={sig['take_profit']}"
+                )
+
+        msg = "\n".join(lines)
+        # Telegram has 4096 char limit
+        if len(msg) > 4000:
+            msg = msg[:4000] + "\n... (truncated)"
+        self.send(msg)

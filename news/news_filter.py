@@ -1,16 +1,23 @@
 """
 فلتر الأخبار الاقتصادية — News Filter
-يستخدم تقويم MT5 الاقتصادي المدمج لمنع التداول وقت الأخبار عالية التأثير.
-يخزن الأحداث في قاعدة البيانات لتدريب ML.
+يستخدم Forex Factory JSON API (مجاني) لجلب الأحداث الاقتصادية.
+يمنع التداول وقت الأخبار عالية التأثير ويخزن الأحداث في قاعدة البيانات لتدريب ML.
 
 المستوى 1: منع التداول 30 دقيقة قبل/بعد أخبار HIGH impact
 المستوى 2: إضافة features للـ ML (حدث قريب، مستوى التأثير، المفاجأة)
 """
-import MetaTrader5 as mt5
+import json
+import hashlib
 from datetime import datetime, timedelta
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 from loguru import logger
 from storage.database import SessionLocal, NewsEvent
 
+
+# ── Forex Factory JSON endpoints (free, no auth) ──
+FF_THIS_WEEK = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+FF_NEXT_WEEK = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
 
 # ── خريطة العملات → الأزواج المتأثرة ──
 CURRENCY_TO_SYMBOLS = {
@@ -25,18 +32,52 @@ CURRENCY_TO_SYMBOLS = {
     "NZD": ["NZDUSD"],
 }
 
-# ── خريطة أهمية الحدث من MT5 ──
-# MT5 calendar importance: 0=None, 1=Low, 2=Medium, 3=High
-IMPORTANCE_MAP = {
-    0: "NONE",
-    1: "LOW",
-    2: "MEDIUM",
-    3: "HIGH",
+# ── Map Forex Factory impact strings to our standard levels ──
+FF_IMPACT_MAP = {
+    "High": "HIGH",
+    "Medium": "MEDIUM",
+    "Low": "LOW",
+    "Holiday": "LOW",
+    "Non-Economic": "LOW",
 }
+
+# ── Currencies we care about ──
+RELEVANT_CURRENCIES = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"}
+
+
+def _parse_ff_number(value_str):
+    """Parse a Forex Factory numeric value like '3.5%', '245K', '-1.2B', etc."""
+    if value_str is None or value_str == "" or value_str == "N/A":
+        return None
+    s = str(value_str).strip()
+    s = s.replace(",", "").replace("%", "").replace("$", "")
+    multiplier = 1.0
+    if s.endswith("K"):
+        multiplier = 1_000
+        s = s[:-1]
+    elif s.endswith("M"):
+        multiplier = 1_000_000
+        s = s[:-1]
+    elif s.endswith("B"):
+        multiplier = 1_000_000_000
+        s = s[:-1]
+    elif s.endswith("T"):
+        multiplier = 1_000_000_000_000
+        s = s[:-1]
+    try:
+        return float(s) * multiplier
+    except (ValueError, TypeError):
+        return None
+
+
+def _generate_event_id(event_name: str, event_time: datetime, currency: str) -> int:
+    """Generate a stable integer event_id from event name + time + currency."""
+    key = f"{event_name}|{event_time.isoformat()}|{currency}"
+    return int(hashlib.md5(key.encode()).hexdigest()[:8], 16)
 
 
 class NewsFilter:
-    """فلتر الأخبار الاقتصادية باستخدام تقويم MT5."""
+    """فلتر الأخبار الاقتصادية باستخدام Forex Factory JSON API."""
 
     def __init__(
         self,
@@ -61,7 +102,7 @@ class NewsFilter:
         self._cache_time = None
         self._cache_ttl = timedelta(hours=1)
 
-        # Build reverse map: symbol → relevant currencies
+        # Build reverse map: symbol -> relevant currencies
         self._symbol_currencies = {}
         for symbol in self.symbols:
             currencies = set()
@@ -70,9 +111,123 @@ class NewsFilter:
                     currencies.add(currency)
             self._symbol_currencies[symbol] = currencies
 
+    def _fetch_ff_json(self, url: str, timeout: int = 15) -> list[dict]:
+        """Fetch and parse JSON from a Forex Factory endpoint."""
+        try:
+            req = Request(url, headers={"User-Agent": "ForexAI/1.0"})
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw)
+        except (URLError, HTTPError, json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to fetch {url}: {e}")
+            return []
+
+    def _parse_ff_events(self, raw_events: list[dict]) -> list[dict]:
+        """
+        Parse Forex Factory JSON events into our standard format.
+
+        FF JSON fields (known structure):
+          - title: event name
+          - country: currency code (e.g. "USD")
+          - date: date+time string (e.g. "2026-03-17T08:30:00-04:00")
+          - impact: "High", "Medium", "Low", "Holiday", "Non-Economic"
+          - forecast: forecast value string
+          - previous: previous value string
+          - actual: actual value string (empty if not yet released)
+        """
+        events = []
+        for item in raw_events:
+            try:
+                currency = item.get("country", "")
+                if currency not in RELEVANT_CURRENCIES:
+                    continue
+
+                impact = FF_IMPACT_MAP.get(item.get("impact", ""), None)
+                if impact is None:
+                    continue
+
+                # Parse datetime — FF provides ISO format with timezone offset
+                date_str = item.get("date", "")
+                if not date_str:
+                    continue
+
+                # Parse ISO datetime and convert to UTC-naive
+                # FF dates are like "2026-03-17T08:30:00-04:00" (Eastern Time)
+                event_time = self._parse_datetime(date_str)
+                if event_time is None:
+                    continue
+
+                event_name = item.get("title", "Unknown Event")
+
+                actual_val = _parse_ff_number(item.get("actual"))
+                forecast_val = _parse_ff_number(item.get("forecast"))
+                previous_val = _parse_ff_number(item.get("previous"))
+
+                surprise = None
+                if actual_val is not None and forecast_val is not None:
+                    surprise = actual_val - forecast_val
+
+                event_id = _generate_event_id(event_name, event_time, currency)
+
+                # Map currency to country code for DB
+                country_map = {
+                    "USD": "US", "EUR": "EU", "GBP": "GB", "JPY": "JP",
+                    "CHF": "CH", "AUD": "AU", "CAD": "CA", "NZD": "NZ",
+                }
+
+                events.append({
+                    "event_id": event_id,
+                    "time": event_time,
+                    "country": country_map.get(currency, currency),
+                    "currency": currency,
+                    "event_name": event_name,
+                    "impact": impact,
+                    "actual": actual_val,
+                    "forecast": forecast_val,
+                    "previous": previous_val,
+                    "surprise": surprise,
+                })
+
+            except Exception as e:
+                logger.debug(f"Error parsing FF event: {e}")
+                continue
+
+        return events
+
+    @staticmethod
+    def _parse_datetime(date_str: str) -> datetime | None:
+        """Parse ISO datetime string to UTC-naive datetime."""
+        try:
+            # Try parsing with timezone info (Python 3.11+ fromisoformat handles offsets)
+            dt = datetime.fromisoformat(date_str)
+            # Convert to UTC then strip timezone
+            if dt.tzinfo is not None:
+                from datetime import timezone
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except (ValueError, TypeError):
+            pass
+
+        # Fallback: try common formats
+        for fmt in (
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                if dt.tzinfo is not None:
+                    from datetime import timezone
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt
+            except ValueError:
+                continue
+        logger.debug(f"Could not parse datetime: {date_str}")
+        return None
+
     def fetch_events(self, hours_ahead: int = 4, hours_behind: int = 1) -> list[dict]:
         """
-        Fetch economic calendar events from MT5.
+        Fetch economic calendar events from Forex Factory.
 
         Parameters
         ----------
@@ -87,78 +242,17 @@ class NewsFilter:
 
         # Use cache if fresh
         if self._cache_time and (now - self._cache_time) < self._cache_ttl:
-            return self._cached_events
+            return self._filter_by_time(self._cached_events, now, hours_ahead, hours_behind)
 
-        from_time = now - timedelta(hours=hours_behind)
-        to_time = now + timedelta(hours=hours_ahead)
+        # Fetch this week's events (covers most use cases)
+        raw_events = self._fetch_ff_json(FF_THIS_WEEK)
 
-        events = []
-        try:
-            # MT5 calendar_value_history returns upcoming/recent economic events
-            cal_values = mt5.calendar_value_history(
-                int(from_time.timestamp()),
-                int(to_time.timestamp()),
-            )
+        # If we're near end of week (Friday+), also fetch next week
+        if now.weekday() >= 4:  # Friday=4, Saturday=5, Sunday=6
+            raw_next = self._fetch_ff_json(FF_NEXT_WEEK)
+            raw_events.extend(raw_next)
 
-            if cal_values is None or len(cal_values) == 0:
-                logger.debug("No calendar events found in range")
-                self._cached_events = []
-                self._cache_time = now
-                return []
-
-            for val in cal_values:
-                # Get event details
-                try:
-                    event_info = mt5.calendar_event_get(val.event_id)
-                    if not event_info:
-                        continue
-                    event = event_info[0] if isinstance(event_info, (list, tuple)) else event_info
-
-                    country_info = mt5.calendar_country_get(event.country_id)
-                    if not country_info:
-                        continue
-                    country = country_info[0] if isinstance(country_info, (list, tuple)) else country_info
-
-                    importance = IMPORTANCE_MAP.get(event.importance, "NONE")
-                    if importance == "NONE":
-                        continue
-
-                    # actual/forecast/previous: MT5 returns as integers, divide by 10^digits
-                    divisor = 10 ** event.digits if event.digits > 0 else 1
-                    actual_val = val.actual_value / divisor if val.actual_value != -2147483648 else None
-                    forecast_val = val.forecast_value / divisor if val.forecast_value != -2147483648 else None
-                    previous_val = val.previous_value / divisor if val.previous_value != -2147483648 else None
-
-                    surprise = None
-                    if actual_val is not None and forecast_val is not None:
-                        surprise = actual_val - forecast_val
-
-                    event_time = datetime.utcfromtimestamp(val.time)
-
-                    event_dict = {
-                        "event_id": val.event_id,
-                        "time": event_time,
-                        "country": country.code,
-                        "currency": country.currency,
-                        "event_name": event.name,
-                        "impact": importance,
-                        "actual": actual_val,
-                        "forecast": forecast_val,
-                        "previous": previous_val,
-                        "surprise": surprise,
-                    }
-                    events.append(event_dict)
-
-                except Exception as e:
-                    logger.debug(f"Error parsing calendar event {val.event_id}: {e}")
-                    continue
-
-        except Exception as e:
-            logger.warning(f"Failed to fetch calendar events: {e}")
-            # Return empty — don't block trading if calendar unavailable
-            self._cached_events = []
-            self._cache_time = now
-            return []
+        events = self._parse_ff_events(raw_events)
 
         self._cached_events = events
         self._cache_time = now
@@ -166,7 +260,16 @@ class NewsFilter:
         high_count = sum(1 for e in events if e["impact"] == "HIGH")
         logger.info(f"Calendar: {len(events)} events fetched ({high_count} HIGH impact)")
 
-        return events
+        return self._filter_by_time(events, now, hours_ahead, hours_behind)
+
+    @staticmethod
+    def _filter_by_time(
+        events: list[dict], now: datetime, hours_ahead: int, hours_behind: int
+    ) -> list[dict]:
+        """Filter events to the requested time window."""
+        from_time = now - timedelta(hours=hours_behind)
+        to_time = now + timedelta(hours=hours_ahead)
+        return [e for e in events if from_time <= e["time"] <= to_time]
 
     def should_block_trading(self, symbol: str, check_time: datetime = None) -> tuple[bool, str | None]:
         """
@@ -238,8 +341,8 @@ class NewsFilter:
         Build news-related features for ML model.
 
         Returns dict with:
-        - has_news_1h: bool — any news within ±1 hour
-        - has_high_impact_1h: bool — HIGH impact news within ±1 hour
+        - has_news_1h: bool — any news within +/-1 hour
+        - has_high_impact_1h: bool — HIGH impact news within +/-1 hour
         - minutes_to_next_news: float — minutes until next news event (999 if none)
         - nearest_news_impact: str — impact level of nearest event
         - news_surprise: float — actual-forecast of most recent event (0 if none)
@@ -265,7 +368,7 @@ class NewsFilter:
         for event in relevant:
             delta_minutes = (event["time"] - now).total_seconds() / 60
 
-            # Within ±60 minutes
+            # Within +/-60 minutes
             if abs(delta_minutes) <= 60:
                 features["has_news_1h"] = True
                 if event["impact"] == "HIGH":

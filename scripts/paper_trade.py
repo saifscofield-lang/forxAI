@@ -123,7 +123,7 @@ def create_strategies(config, ml_models):
 
 
 def scan_and_trade():
-    """Single scan cycle -- called by scheduler every hour."""
+    """Single scan cycle -- called by scheduler every 30 minutes."""
     global scan_count
     scan_count += 1
 
@@ -139,6 +139,7 @@ def scan_and_trade():
             logger.error("MT5 disconnected, attempting reconnect...")
             if not engine.adapter.connect():
                 logger.error("Reconnect failed, skipping scan")
+                engine.notifier.send("<b>ERROR:</b> MT5 disconnected, reconnect failed!")
                 return
 
         # Show account status
@@ -159,22 +160,33 @@ def scan_and_trade():
                 )
 
         # Show news status
+        blocked_symbols = []
+        upcoming_news = []
         if engine.news_filter:
             symbols = list(engine.instruments.keys())
-            blocked_symbols = []
             for sym in symbols:
                 blocked, reason = engine.news_filter.should_block_trading(sym)
                 if blocked:
                     blocked_symbols.append(f"{sym}: {reason}")
+
+            # Get upcoming news for all currencies
+            upcoming_news = engine.news_filter.fetch_events(hours_ahead=8, hours_behind=1)
+            high_news = [e for e in upcoming_news if e.get("impact") == "HIGH"]
+
             if blocked_symbols:
-                logger.warning(f"News blocks active:")
+                logger.warning("News blocks active:")
                 for bs in blocked_symbols:
                     logger.warning(f"  {bs}")
             else:
                 logger.info("No news blocks active")
 
-        # Run scan cycle
-        executed = engine.run_once()
+            if high_news:
+                logger.info(f"Upcoming HIGH impact news: {len(high_news)}")
+                for ev in high_news[:5]:
+                    logger.info(f"  [{ev['currency']}] {ev['event_name']} @ {ev['time']}")
+
+        # Run scan cycle (returns executed signals + per-symbol details)
+        executed, scan_details = engine.run_once()
 
         if executed:
             for sig_info in executed:
@@ -186,20 +198,21 @@ def scan_and_trade():
         else:
             logger.info("No executed signals this scan")
 
-        # Send Telegram scan summary
+        # Send detailed Telegram report
         open_count = 0 if positions is None or (hasattr(positions, 'empty') and positions.empty) else len(positions)
-        engine.notifier.scan_summary(
+        engine.notifier.detailed_scan_report(
             scan_number=scan_count,
             account=account,
             open_positions=open_count,
+            scan_details=scan_details,
             executed=executed,
-            blocked_symbols=blocked_symbols if blocked_symbols else None,
+            news_events=upcoming_news if upcoming_news else None,
         )
 
         logger.info(f"Scan #{scan_count} complete")
 
-        # Auto-sync data to Google Drive every 6 scans (~6 hours)
-        if scan_count % 6 == 0:
+        # Auto-sync data to Google Drive every 12 scans (~6 hours at 30min interval)
+        if scan_count % 12 == 0:
             try:
                 from scripts.sync_upload import sync_upload
                 logger.info("Auto-syncing data to Google Drive...")
@@ -210,6 +223,9 @@ def scan_and_trade():
 
     except Exception as e:
         logger.error(f"Scan error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        engine.notifier.send(f"<b>SCAN ERROR:</b>\n{e}")
 
 
 def shutdown(signum=None, frame=None):
@@ -254,7 +270,7 @@ def main():
     print("=" * 60)
     print("     ForexAI Paper Trading")
     print("     Strategy: SMA Crossover + ML Filter + News Filter")
-    print(f"     Mode: {'Single scan' if args.once else 'Continuous (H1 schedule)'}")
+    print(f"     Mode: {'Single scan' if args.once else 'Continuous (every 30 min)'}")
     print("=" * 60)
     print()
 
@@ -321,21 +337,21 @@ def main():
     else:
         # ── Continuous mode with APScheduler ────────────────────────
         logger.info("Starting scheduled paper trading...")
-        logger.info("Schedule: every hour at minute 5 (5 min after candle close)")
+        logger.info("Schedule: every 30 minutes (at :05 and :35)")
         logger.info("Press Ctrl+C to stop")
         print()
 
         # Run first scan immediately
         scan_and_trade()
 
-        # Schedule hourly scans (5 min after each hour to ensure candle is closed)
+        # Schedule scans every 30 minutes (at :05 and :35 past each hour)
         scheduler = BlockingScheduler()
         scheduler.add_job(
             scan_and_trade,
-            trigger=CronTrigger(minute=5),  # Every hour at :05
-            id="hourly_scan",
-            name="Hourly H1 Scan",
-            misfire_grace_time=300,  # 5 min grace period
+            trigger=CronTrigger(minute="5,35"),  # Every 30 min
+            id="scan_30min",
+            name="30-min Scan",
+            misfire_grace_time=300,
         )
 
         try:

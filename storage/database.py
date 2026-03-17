@@ -238,6 +238,54 @@ class ScanLog(Base):
     equity          = Column(Float, nullable=True)
     news_blocked    = Column(Boolean, default=False)         # Was trading blocked by news?
     news_event_name = Column(String(200), nullable=True)     # Which news event blocked
+    details_json    = Column(Text, nullable=True)            # JSON: per-symbol scan details
+
+
+class SymbolScanDetail(Base):
+    """تفاصيل المسح لكل زوج — لتشخيص سبب عدم توليد إشارة."""
+    __tablename__ = "symbol_scan_details"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    time            = Column(DateTime, default=datetime.utcnow)
+    scan_number     = Column(Integer)
+    symbol          = Column(String(20), nullable=False)
+
+    # ── SMA state ──
+    sma_fast        = Column(Float, nullable=True)
+    sma_slow        = Column(Float, nullable=True)
+    sma_gap_pct     = Column(Float, nullable=True)           # (fast-slow)/slow * 100
+    sma_prev_fast   = Column(Float, nullable=True)
+    sma_prev_slow   = Column(Float, nullable=True)
+    crossover       = Column(String(20), nullable=True)      # BULLISH / BEARISH / NONE
+    cross_distance  = Column(Float, nullable=True)           # How far from crossing (pips)
+
+    # ── Indicators ──
+    price           = Column(Float, nullable=True)
+    rsi             = Column(Float, nullable=True)
+    atr             = Column(Float, nullable=True)
+    macd            = Column(Float, nullable=True)
+    macd_signal     = Column(Float, nullable=True)
+    bb_position     = Column(Float, nullable=True)
+
+    # ── Trends ──
+    h1_trend        = Column(String(10), nullable=True)
+    h4_trend        = Column(String(10), nullable=True)
+    volatility      = Column(String(10), nullable=True)
+
+    # ── Signal outcome ──
+    signal_generated = Column(Boolean, default=False)
+    signal_action   = Column(String(10), nullable=True)
+    signal_status   = Column(String(20), nullable=True)
+    rejection_reason = Column(String(300), nullable=True)    # Why no signal
+
+    # ── News context ──
+    news_blocked    = Column(Boolean, default=False)
+    news_event      = Column(String(200), nullable=True)
+    upcoming_news   = Column(Text, nullable=True)            # JSON list of upcoming events
+
+    __table_args__ = (
+        Index("ix_scan_detail_symbol_time", "symbol", "time"),
+    )
 
 
 def init_db():

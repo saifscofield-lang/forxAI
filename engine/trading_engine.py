@@ -13,7 +13,7 @@ from execution.broker_adapters.mt5_adapter import MT5Adapter
 from risk.risk_manager import RiskManager
 from storage.database import (
     SessionLocal, Trade, AccountSnapshot, SignalLog, TradeResult,
-    MarketContext, ScanLog,
+    MarketContext, ScanLog, SymbolScanDetail,
 )
 from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
@@ -70,12 +70,13 @@ class TradingEngine:
         self.adapter.disconnect()
         logger.info("Engine stopped")
 
-    def scan_signals(self) -> list[dict]:
-        """Run all strategies on all instruments, collect all signals (including filtered).
+    def scan_signals(self) -> tuple[list[dict], list[dict]]:
+        """Run all strategies on all instruments, collect all signals.
 
-        Also captures multi-timeframe market context and checks news filter.
+        Returns (signals, scan_details) where scan_details is per-symbol diagnostic info.
         """
         signals = []
+        scan_details = []
         tf_config = self.config.get("timeframes", {})
         primary_tf = tf_config.get("primary", "H1")
         secondary_tf = tf_config.get("secondary", "H4")
@@ -83,9 +84,14 @@ class TradingEngine:
         bars = self.config.get("data", {}).get("history_bars", 500)
 
         for symbol in self.instruments:
+            detail = {"symbol": symbol, "signal_generated": False, "rejection_reason": ""}
+
             # ── Fetch multi-timeframe data ──
             df_h1 = self.adapter.get_ohlcv(symbol, primary_tf, bars)
             if df_h1.empty:
+                detail["rejection_reason"] = "Failed to fetch H1 data"
+                logger.warning(f"[{symbol}] No H1 data received from MT5")
+                scan_details.append(detail)
                 continue
 
             df_h4 = self.adapter.get_ohlcv(symbol, secondary_tf, 200)
@@ -97,23 +103,39 @@ class TradingEngine:
             # ── Check news filter ──
             news_blocked = False
             news_reason = None
+            upcoming_news = []
             if self.news_filter:
                 news_blocked, news_reason = self.news_filter.should_block_trading(symbol)
+                upcoming_news = self.news_filter.get_nearby_events(symbol, window_hours=4.0)
 
-            # ── Run strategies ──
+            detail["news_blocked"] = news_blocked
+            detail["news_event"] = news_reason
+            detail["upcoming_news"] = upcoming_news
+            detail["h1_trend"] = market_ctx.get("h1_trend")
+            detail["h4_trend"] = market_ctx.get("h4_trend")
+            detail["volatility"] = market_ctx.get("volatility_regime")
+
+            # ── Compute SMA diagnostic for this symbol ──
             for strategy in self.strategies:
                 if hasattr(strategy, "symbol") and strategy.symbol != symbol:
                     continue
+
+                # Get SMA diagnostic before generating signal
+                sma_diag = self._diagnose_sma(df_h1, strategy)
+                detail.update(sma_diag)
+
                 signal = strategy.generate_signal(df_h1)
                 if signal:
+                    detail["signal_generated"] = True
+                    detail["signal_action"] = signal["action"]
+                    detail["signal_status"] = signal.get("status", "ACTIVE")
+
                     signal["symbol"] = symbol
-                    # Attach market context
                     signal["h1_trend"] = market_ctx.get("h1_trend")
                     signal["h4_trend"] = market_ctx.get("h4_trend")
                     signal["volatility_regime"] = market_ctx.get("volatility_regime")
                     signal["spread_at_entry"] = market_ctx.get("spread")
 
-                    # Attach news info
                     if self.news_filter:
                         nearby = self.news_filter.get_nearby_events(symbol, window_hours=1.0)
                         if nearby:
@@ -123,20 +145,111 @@ class TradingEngine:
                         else:
                             signal["news_nearby"] = False
 
-                    # Override status if news blocks
                     if news_blocked and signal.get("status") == "ACTIVE":
                         signal["status"] = "NEWS_FILTERED"
                         signal["news_filter_reason"] = news_reason
+                        detail["signal_status"] = "NEWS_FILTERED"
 
-                    # Save market context with signal info
                     market_ctx["signal_action"] = signal["action"]
                     market_ctx["signal_status"] = signal["status"]
                     signals.append(signal)
+                else:
+                    # Build detailed rejection reason
+                    reasons = []
+                    cross = detail.get("crossover", "NONE")
+                    if cross == "NONE":
+                        gap = detail.get("sma_gap_pct", 0)
+                        direction = "above" if gap > 0 else "below"
+                        reasons.append(f"No SMA crossover (fast {direction} slow by {abs(gap):.3f}%)")
+                        cross_dist = detail.get("cross_distance", 0)
+                        reasons.append(f"Distance to cross: {abs(cross_dist):.1f} pips")
+                    rsi_val = detail.get("rsi")
+                    if rsi_val is not None:
+                        if rsi_val >= 70:
+                            reasons.append(f"RSI overbought ({rsi_val:.1f})")
+                        elif rsi_val <= 30:
+                            reasons.append(f"RSI oversold ({rsi_val:.1f})")
+                    detail["rejection_reason"] = " | ".join(reasons) if reasons else "No crossover"
 
-            # Save market context snapshot (even without signals)
+                    logger.info(
+                        f"[{symbol}] NO SIGNAL | "
+                        f"SMA_fast={detail.get('sma_fast', 0):.5f} SMA_slow={detail.get('sma_slow', 0):.5f} "
+                        f"gap={detail.get('sma_gap_pct', 0):+.3f}% | "
+                        f"RSI={detail.get('rsi', 0):.1f} | ATR={detail.get('atr', 0):.5f} | "
+                        f"H1={detail.get('h1_trend')} H4={detail.get('h4_trend')} | "
+                        f"Reason: {detail['rejection_reason']}"
+                    )
+
             self._save_market_context(symbol, market_ctx)
+            scan_details.append(detail)
 
-        return signals
+        return signals, scan_details
+
+    def _diagnose_sma(self, df: pd.DataFrame, strategy) -> dict:
+        """Compute detailed SMA crossover diagnostic for a symbol."""
+        diag = {}
+        try:
+            tmp = df.copy()
+            tmp = add_sma(tmp, strategy.fast_period)
+            tmp = add_sma(tmp, strategy.slow_period)
+            tmp = add_rsi(tmp, strategy.rsi_period)
+            tmp = add_atr(tmp, strategy.atr_period)
+            tmp = add_macd(tmp)
+            tmp = add_bollinger_bands(tmp, 20)
+
+            fast_col = f"sma_{strategy.fast_period}"
+            slow_col = f"sma_{strategy.slow_period}"
+            rsi_col = f"rsi_{strategy.rsi_period}"
+            atr_col = f"atr_{strategy.atr_period}"
+
+            clean = tmp.dropna(subset=[fast_col, slow_col, rsi_col, atr_col])
+            if len(clean) < 2:
+                diag["rejection_reason"] = "Not enough data for indicators"
+                return diag
+
+            curr = clean.iloc[-1]
+            prev = clean.iloc[-2]
+
+            sma_fast = float(curr[fast_col])
+            sma_slow = float(curr[slow_col])
+            prev_fast = float(prev[fast_col])
+            prev_slow = float(prev[slow_col])
+
+            diag["price"] = float(curr["close"])
+            diag["sma_fast"] = sma_fast
+            diag["sma_slow"] = sma_slow
+            diag["sma_prev_fast"] = prev_fast
+            diag["sma_prev_slow"] = prev_slow
+            diag["sma_gap_pct"] = ((sma_fast - sma_slow) / sma_slow) * 100 if sma_slow else 0
+            diag["rsi"] = float(curr[rsi_col])
+            diag["atr"] = float(curr[atr_col])
+            diag["macd"] = float(curr.get("macd", 0))
+            diag["macd_signal"] = float(curr.get("macd_signal", 0))
+
+            # Bollinger position
+            bb_range = curr.get("bb_upper", 0) - curr.get("bb_lower", 0)
+            if bb_range > 0:
+                diag["bb_position"] = float((curr["close"] - curr.get("bb_lower", 0)) / bb_range)
+
+            # Crossover detection
+            inst = self.instruments.get(strategy.symbol, {})
+            pip_value = inst.get("pip_value", 0.0001)
+            cross_distance = abs(sma_fast - sma_slow) / pip_value
+
+            if prev_fast <= prev_slow and sma_fast > sma_slow:
+                diag["crossover"] = "BULLISH"
+            elif prev_fast >= prev_slow and sma_fast < sma_slow:
+                diag["crossover"] = "BEARISH"
+            else:
+                diag["crossover"] = "NONE"
+
+            diag["cross_distance"] = cross_distance
+
+        except Exception as e:
+            diag["rejection_reason"] = f"Diagnostic error: {e}"
+            logger.debug(f"SMA diagnostic error: {e}")
+
+        return diag
 
     def _build_market_context(self, symbol: str, df_h1: pd.DataFrame,
                               df_h4: pd.DataFrame, df_m15: pd.DataFrame) -> dict:
@@ -558,14 +671,14 @@ class TradingEngine:
             exit_reason=exit_reason, ticket=trade.ticket,
         )
 
-    def run_once(self) -> list[dict]:
+    def run_once(self) -> tuple[list[dict], list[dict]]:
         """Run one scan cycle: generate signals -> log -> execute -> check closed.
 
-        Saves comprehensive scan log with signal counts and timing.
+        Returns (executed_signals, scan_details) for Telegram reporting.
         """
         if not self.running:
             logger.warning("Engine not running")
-            return []
+            return [], []
 
         self.scan_count += 1
         scan_start = _time.time()
@@ -581,7 +694,7 @@ class TradingEngine:
         # Check for trades that closed since last scan
         self.check_closed_trades()
 
-        signals = self.scan_signals()
+        signals, scan_details = self.scan_signals()
         executed = []
 
         # Track signal counts for scan log
@@ -594,14 +707,12 @@ class TradingEngine:
         for signal in signals:
             status = signal.get("status", "ACTIVE")
 
-            # ML-filtered signals: log and skip
             if status == "ML_FILTERED":
                 counts["ml_filtered"] += 1
                 self._log_signal(signal, "ML_FILTERED",
                                  reason=f"ML confidence {signal.get('ml_confidence', 0):.1%} < threshold")
                 continue
 
-            # News-filtered signals: log and skip
             if status == "NEWS_FILTERED":
                 counts["news_filtered"] += 1
                 news_block_event = signal.get("news_filter_reason", "")
@@ -613,7 +724,6 @@ class TradingEngine:
 
             counts["active"] += 1
 
-            # Active signals: try to execute
             logger.info(
                 f"Signal: {signal['action']} {signal['symbol']} | "
                 f"{signal['reason']}"
@@ -633,7 +743,7 @@ class TradingEngine:
 
         self.take_snapshot()
 
-        # ── Save scan log ──
+        # ── Save scan log + details ──
         scan_duration = int((_time.time() - scan_start) * 1000)
         positions = self.adapter.get_open_positions()
         self._save_scan_log(
@@ -643,16 +753,38 @@ class TradingEngine:
             account=account,
             news_blocked=counts["news_filtered"] > 0,
             news_event=news_block_event,
+            scan_details=scan_details,
         )
 
-        return executed
+        # Save per-symbol details to DB
+        self._save_scan_details(scan_details)
+
+        return executed, scan_details
 
     def _save_scan_log(self, scan_duration: int, counts: dict,
                        open_positions: int, account: dict,
-                       news_blocked: bool, news_event: str = None):
+                       news_blocked: bool, news_event: str = None,
+                       scan_details: list = None):
         """Save scan cycle log to database."""
+        import json
         session = SessionLocal()
         try:
+            # Serialize scan details summary
+            details_json = None
+            if scan_details:
+                summary = []
+                for d in scan_details:
+                    s = {
+                        "symbol": d.get("symbol"),
+                        "crossover": d.get("crossover", "NONE"),
+                        "sma_gap_pct": round(d.get("sma_gap_pct", 0), 4),
+                        "rsi": round(d.get("rsi", 0), 1),
+                        "signal": d.get("signal_generated", False),
+                        "reason": d.get("rejection_reason", ""),
+                    }
+                    summary.append(s)
+                details_json = json.dumps(summary, ensure_ascii=False)
+
             log = ScanLog(
                 scan_number=self.scan_count,
                 duration_ms=scan_duration,
@@ -668,11 +800,62 @@ class TradingEngine:
                 equity=account.get("equity"),
                 news_blocked=news_blocked,
                 news_event_name=news_event,
+                details_json=details_json,
             )
             session.add(log)
             session.commit()
         except Exception as e:
             session.rollback()
             logger.debug(f"Scan log save error: {e}")
+        finally:
+            session.close()
+
+    def _save_scan_details(self, scan_details: list):
+        """Save per-symbol scan details to database."""
+        import json
+        session = SessionLocal()
+        try:
+            for d in scan_details:
+                upcoming_json = None
+                if d.get("upcoming_news"):
+                    upcoming_json = json.dumps(
+                        [{"name": e.get("event_name", ""), "impact": e.get("impact", ""),
+                          "time": str(e.get("time", "")), "currency": e.get("currency", "")}
+                         for e in d["upcoming_news"]],
+                        ensure_ascii=False,
+                    )
+
+                detail = SymbolScanDetail(
+                    scan_number=self.scan_count,
+                    symbol=d.get("symbol", ""),
+                    sma_fast=d.get("sma_fast"),
+                    sma_slow=d.get("sma_slow"),
+                    sma_gap_pct=d.get("sma_gap_pct"),
+                    sma_prev_fast=d.get("sma_prev_fast"),
+                    sma_prev_slow=d.get("sma_prev_slow"),
+                    crossover=d.get("crossover"),
+                    cross_distance=d.get("cross_distance"),
+                    price=d.get("price"),
+                    rsi=d.get("rsi"),
+                    atr=d.get("atr"),
+                    macd=d.get("macd"),
+                    macd_signal=d.get("macd_signal"),
+                    bb_position=d.get("bb_position"),
+                    h1_trend=d.get("h1_trend"),
+                    h4_trend=d.get("h4_trend"),
+                    volatility=d.get("volatility"),
+                    signal_generated=d.get("signal_generated", False),
+                    signal_action=d.get("signal_action"),
+                    signal_status=d.get("signal_status"),
+                    rejection_reason=d.get("rejection_reason"),
+                    news_blocked=d.get("news_blocked", False),
+                    news_event=d.get("news_event"),
+                    upcoming_news=upcoming_json,
+                )
+                session.add(detail)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Scan details save error: {e}")
         finally:
             session.close()

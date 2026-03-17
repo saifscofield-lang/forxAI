@@ -5,7 +5,7 @@ Run this on the DEV computer to pull latest data from the trading PC.
 Setup:
 1. Install Google Drive for Desktop: https://www.google.com/drive/download/
 2. Sign in with the SAME Google account used on the trading PC
-3. Google Drive will appear as a drive letter (e.g., G:\)
+3. Google Drive will appear as a drive letter (e.g., G:\\)
 4. Update GDRIVE_PATH below if your drive letter is different
 """
 
