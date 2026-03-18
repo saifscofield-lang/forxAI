@@ -16,8 +16,8 @@ class BollingerBounceStrategy:
         symbol: str = "",
         bb_period: int = 20,
         atr_period: int = 14,
-        atr_sl_multiplier: float = 1.0,
-        atr_tp_multiplier: float = 1.5,
+        atr_sl_multiplier: float = 2.0,
+        atr_tp_multiplier: float = 3.0,
     ):
         self.name = "bollinger_bounce"
         self.symbol = symbol

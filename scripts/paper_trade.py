@@ -1,7 +1,7 @@
 """
-Paper Trading Loop -- ForexAI (Aggressive Data Collection Mode)
-Runs 4 strategies on 8 symbols, scans every 15 minutes.
-Goal: maximize trades for ML training data collection.
+Paper Trading Loop -- ForexAI (Clean Data Collection Mode)
+Runs 4 strategies on 8 symbols, scans every H1 candle.
+Goal: collect high-quality trades for ML training.
 
 Usage:
     python scripts/paper_trade.py           # Run continuously
@@ -66,28 +66,28 @@ def create_strategies(config):
             atr_tp_multiplier=float(params.get("atr_tp_mult", 2.5)),
         ))
 
-        # 2. RSI Reversal (aggressive, frequent signals)
+        # 2. RSI Reversal (wider stops for H1)
         strategies.append(RSIReversalStrategy(
             symbol=symbol,
             rsi_period=14,
-            oversold=35.0,
-            overbought=65.0,
-            atr_sl_multiplier=1.0,
-            atr_tp_multiplier=1.5,
+            oversold=30.0,
+            overbought=70.0,
+            atr_sl_multiplier=2.0,
+            atr_tp_multiplier=3.0,
         ))
 
-        # 3. MACD Crossover
+        # 3. MACD Crossover (wider stops for H1)
         strategies.append(MACDCrossoverStrategy(
             symbol=symbol,
-            atr_sl_multiplier=1.2,
-            atr_tp_multiplier=2.0,
+            atr_sl_multiplier=2.5,
+            atr_tp_multiplier=3.5,
         ))
 
-        # 4. Bollinger Bounce (mean reversion)
+        # 4. Bollinger Bounce (wider stops for H1)
         strategies.append(BollingerBounceStrategy(
             symbol=symbol,
-            atr_sl_multiplier=1.0,
-            atr_tp_multiplier=1.5,
+            atr_sl_multiplier=2.0,
+            atr_tp_multiplier=3.0,
         ))
 
         logger.info(
@@ -99,7 +99,7 @@ def create_strategies(config):
 
 
 def scan_and_trade():
-    """Single scan cycle -- called by scheduler every 15 minutes."""
+    """Single scan cycle -- called by scheduler every H1 candle."""
     global scan_count
     scan_count += 1
 
@@ -187,8 +187,8 @@ def scan_and_trade():
 
         logger.info(f"Scan #{scan_count} complete")
 
-        # Auto-sync data to Google Drive every 4 scans (~1 hour at 15min interval)
-        if scan_count % 4 == 0:
+        # Auto-sync data to Google Drive every 6 scans (~6 hours at H1 interval)
+        if scan_count % 6 == 0:
             try:
                 from scripts.sync_upload import sync_upload
                 logger.info("Auto-syncing data to Google Drive...")
@@ -197,7 +197,7 @@ def scan_and_trade():
             except Exception as sync_err:
                 logger.warning(f"Data sync failed (non-critical): {sync_err}")
 
-        # Export training data every 24 scans (~6 hours)
+        # Export training data every 24 scans (~24 hours at H1 interval)
         if scan_count % 24 == 0:
             try:
                 from scripts.export_training_data import export_all
@@ -254,9 +254,9 @@ def main():
     # -- Banner --
     print()
     print("=" * 60)
-    print("     ForexAI Paper Trading — DATA COLLECTION MODE")
+    print("     ForexAI Paper Trading — CLEAN DATA COLLECTION")
     print("     Strategies: SMA + RSI + MACD + Bollinger (x8 symbols)")
-    print(f"     Mode: {'Single scan' if args.once else 'Continuous (every 15 min)'}")
+    print(f"     Mode: {'Single scan' if args.once else 'Continuous (H1 candle)'}")
     print("=" * 60)
     print()
 
@@ -303,8 +303,8 @@ def main():
     print(f"  Symbols: {', '.join(symbols)}")
     print(f"  Strategies per symbol: 4 (SMA, RSI, MACD, BB)")
     print(f"  Total strategy instances: {len(strategies)}")
-    print(f"  Scan interval: every 15 minutes")
-    print(f"  Drive sync: every 1 hour")
+    print(f"  Scan interval: every H1 candle")
+    print(f"  Drive sync: every 6 hours")
     print(f"  News Filter: ON (block 30min around HIGH impact)")
     print()
 
@@ -321,21 +321,21 @@ def main():
         engine.stop()
     else:
         # -- Continuous mode --
-        logger.info("Starting scheduled paper trading (DATA COLLECTION)...")
-        logger.info("Schedule: every 15 minutes (at :02, :17, :32, :47)")
+        logger.info("Starting scheduled paper trading (CLEAN DATA)...")
+        logger.info("Schedule: every H1 candle (at :05 past each hour)")
         logger.info("Press Ctrl+C to stop")
         print()
 
         # Run first scan immediately
         scan_and_trade()
 
-        # Schedule scans every 15 minutes
+        # Schedule scans every H1 (at 5 minutes past each hour)
         scheduler = BlockingScheduler()
         scheduler.add_job(
             scan_and_trade,
-            trigger=CronTrigger(minute="2,17,32,47"),
-            id="scan_15min",
-            name="15-min Scan",
+            trigger=CronTrigger(minute="5"),
+            id="scan_h1",
+            name="H1 Scan",
             misfire_grace_time=300,
         )
 

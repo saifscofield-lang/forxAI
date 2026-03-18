@@ -18,8 +18,8 @@ class SMACrossoverStrategy:
         slow_period: int = 50,
         rsi_period: int = 14,
         atr_period: int = 14,
-        atr_sl_multiplier: float = 1.5,
-        atr_tp_multiplier: float = 2.0,
+        atr_sl_multiplier: float = 2.0,
+        atr_tp_multiplier: float = 3.0,
     ):
         self.name = "sma_crossover"
         self.symbol = symbol

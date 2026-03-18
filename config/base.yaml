@@ -1,13 +1,13 @@
 # ============================================================
-# الإعدادات الأساسية للنظام — وضع جمع البيانات العدواني
+# الإعدادات الأساسية للنظام — وضع جمع بيانات نظيفة للتدريب
 # ============================================================
 
 system:
   name: "ForexAI Trading Platform"
-  version: "0.2.0"
+  version: "0.3.0"
   mode: "paper"              # paper | live
 
-# --- الأدوات المالية (8 أزواج لزيادة البيانات) ---
+# --- الأدوات المالية (8 أزواج) ---
 instruments:
   - symbol: "EURUSD"
     digits: 5
@@ -36,16 +36,16 @@ instruments:
 
 # --- الإطار الزمني ---
 timeframes:
-  primary: "M15"             # 15 دقيقة — للإشارات (سريع لجمع البيانات)
-  secondary: "H1"            # ساعة — للاتجاه العام
-  confirmation: "M5"         # 5 دقائق — للدخول
+  primary: "H1"              # ساعة — للإشارات (نظيف للتدريب)
+  secondary: "H4"            # 4 ساعات — للاتجاه العام
+  confirmation: "M15"        # 15 دقيقة — للدخول
 
-# --- إدارة المخاطر (مخففة — حساب ديمو لجمع البيانات) ---
+# --- إدارة المخاطر (واقعية — بيانات نظيفة للتدريب) ---
 risk:
-  max_risk_per_trade: 0.02   # 2% per trade
-  max_daily_drawdown: 1.0    # 100% — disabled for demo
-  max_open_positions: 50     # السماح بصفقات كثيرة
-  max_correlated_positions: 10
+  max_risk_per_trade: 0.01   # 1% per trade
+  max_daily_drawdown: 0.05   # 5% daily max drawdown
+  max_open_positions: 8      # صفقة واحدة لكل زوج
+  max_correlated_positions: 3
 
 # --- جلب البيانات ---
 data:

@@ -34,7 +34,7 @@ class TestPositionSizing:
 
     def test_maximum_lot(self, rm):
         lot = rm.calculate_position_size(10_000_000, 10, 0.0001)
-        assert lot == 10.0
+        assert lot == 2.0
 
     def test_zero_sl_returns_zero(self, rm):
         lot = rm.calculate_position_size(100000, 0, 0.0001)

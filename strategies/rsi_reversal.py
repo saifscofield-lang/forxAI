@@ -17,10 +17,10 @@ class RSIReversalStrategy:
         symbol: str = "",
         rsi_period: int = 14,
         atr_period: int = 14,
-        oversold: float = 35.0,
-        overbought: float = 65.0,
-        atr_sl_multiplier: float = 1.0,
-        atr_tp_multiplier: float = 1.5,
+        oversold: float = 30.0,
+        overbought: float = 70.0,
+        atr_sl_multiplier: float = 2.0,
+        atr_tp_multiplier: float = 3.0,
     ):
         self.name = "rsi_reversal"
         self.symbol = symbol

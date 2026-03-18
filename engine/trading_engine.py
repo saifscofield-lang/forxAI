@@ -480,6 +480,15 @@ class TradingEngine:
                 # Also limit max 1 position per symbol
                 return False, f"Position already open on {symbol}"
 
+        # H4 trend filter: only trade with the trend
+        h4_trend = signal.get("h4_trend")
+        if h4_trend and h4_trend != "RANGE":
+            action = signal["action"]
+            if h4_trend == "UP" and action == "SELL":
+                return False, f"H4 trend is UP, blocking SELL on {symbol}"
+            if h4_trend == "DOWN" and action == "BUY":
+                return False, f"H4 trend is DOWN, blocking BUY on {symbol}"
+
         # Calculate position size using ATR-based stop loss
         pip_value = inst["pip_value"]
         entry = signal["price"]

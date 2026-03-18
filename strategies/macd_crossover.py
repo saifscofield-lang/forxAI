@@ -15,8 +15,8 @@ class MACDCrossoverStrategy:
         self,
         symbol: str = "",
         atr_period: int = 14,
-        atr_sl_multiplier: float = 1.2,
-        atr_tp_multiplier: float = 2.0,
+        atr_sl_multiplier: float = 2.5,
+        atr_tp_multiplier: float = 3.5,
     ):
         self.name = "macd_crossover"
         self.symbol = symbol
