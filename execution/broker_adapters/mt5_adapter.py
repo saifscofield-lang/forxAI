@@ -149,6 +149,18 @@ class MT5Adapter:
     # تنفيذ الأوامر
     # ─────────────────────────────────────────
 
+    def _get_filling_mode(self, symbol: str):
+        """Auto-detect supported filling mode for a symbol."""
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return mt5.ORDER_FILLING_IOC
+        filling = info.filling_mode
+        if filling & mt5.SYMBOL_FILLING_FOK:
+            return mt5.ORDER_FILLING_FOK
+        elif filling & mt5.SYMBOL_FILLING_IOC:
+            return mt5.ORDER_FILLING_IOC
+        return mt5.ORDER_FILLING_RETURN
+
     def place_order(
         self,
         symbol: str,
@@ -179,7 +191,7 @@ class MT5Adapter:
             "magic":       20240101,
             "comment":     comment,
             "type_time":   mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._get_filling_mode(symbol),
         }
 
         result = mt5.order_send(request)
@@ -216,7 +228,7 @@ class MT5Adapter:
             "magic":       20240101,
             "comment":     "ForexAI Close",
             "type_time":   mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._get_filling_mode(pos.symbol),
         }
 
         result = mt5.order_send(request)
