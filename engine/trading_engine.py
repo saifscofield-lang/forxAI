@@ -465,6 +465,21 @@ class TradingEngine:
         if not self.risk_manager.can_open_trade(len(open_positions)):
             return False, "Max positions or daily drawdown limit"
 
+        # Prevent conflicting directions on same symbol
+        if len(open_positions) > 0:
+            symbol_positions = open_positions[
+                open_positions["symbol"] == symbol
+            ]
+            if len(symbol_positions) > 0:
+                existing_dir = symbol_positions.iloc[0]["type"]
+                new_dir = signal["action"]
+                if existing_dir != new_dir:
+                    return False, (
+                        f"Conflicting {existing_dir} already open on {symbol}"
+                    )
+                # Also limit max 1 position per symbol
+                return False, f"Position already open on {symbol}"
+
         # Calculate position size using ATR-based stop loss
         pip_value = inst["pip_value"]
         entry = signal["price"]

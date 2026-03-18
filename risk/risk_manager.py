@@ -53,7 +53,7 @@ class RiskManager:
 
         # Clamp to valid MT5 range
         lot_size = max(0.01, round(lot_size, 2))
-        lot_size = min(lot_size, 10.0)
+        lot_size = min(lot_size, 2.0)
 
         logger.debug(
             f"Position size: {lot_size} lots | "
@@ -92,8 +92,8 @@ class RiskManager:
         """Validate a trade before execution"""
         if lot_size < 0.01:
             return False, "Lot size too small"
-        if lot_size > 10.0:
-            return False, "Lot size too large"
+        if lot_size > 2.0:
+            return False, "Lot size too large (max 2.0)"
         if stop_loss <= 0:
             return False, "Stop loss required"
 
