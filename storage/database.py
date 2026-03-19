@@ -65,6 +65,7 @@ class Trade(Base):
     strategy      = Column(String(50), nullable=True)
     is_closed     = Column(Boolean, default=False)
     comment       = Column(String(100), nullable=True)
+    engine_version = Column(String(10), nullable=True)   # e.g. "2.0" — for filtering ML training data
 
 
 class SignalLog(Base):
@@ -136,6 +137,7 @@ class TradeResult(Base):
     news_nearby     = Column(Boolean, default=False)            # High-impact news within ±1 hour
     news_event_name = Column(String(200), nullable=True)        # Nearest news event name
     news_impact     = Column(String(10), nullable=True)         # LOW / MEDIUM / HIGH
+    engine_version  = Column(String(10), nullable=True)         # e.g. "2.0" — for filtering ML training data
 
 
 class AccountSnapshot(Base):
@@ -340,6 +342,15 @@ def init_db():
         if "details_json" not in cols:
             c.execute("ALTER TABLE scan_logs ADD COLUMN details_json TEXT")
             conn.commit()
+
+        # Add engine_version to trades and trade_results if missing
+        for table in ("trades", "trade_results"):
+            c.execute(f"PRAGMA table_info({table})")
+            cols = [r[1] for r in c.fetchall()]
+            if cols and "engine_version" not in cols:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN engine_version TEXT")
+                conn.commit()
+
         conn.close()
 
     print("Database ready")

@@ -20,6 +20,10 @@ from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
 
 
+ENGINE_VERSION = "2.0"  # Post-improvements (2026-03-19): 3 strategies, trailing SL, news filter
+ML_TRAINING_THRESHOLD = 200  # Minimum closed trades needed for ML training
+
+
 class TradingEngine:
     """محرك التداول الرئيسي"""
 
@@ -38,6 +42,7 @@ class TradingEngine:
         self.notifier = TelegramNotifier()
         self.news_filter = None
         self.scan_count = 0
+        self._ml_ready_notified = False  # Track if we already sent ML-ready notification
 
     def set_news_filter(self, news_filter):
         """Set news filter for blocking trades during high-impact events."""
@@ -669,6 +674,7 @@ class TradingEngine:
                 take_profit=signal["take_profit"],
                 strategy=signal["strategy"],
                 comment=signal.get("reason", ""),
+                engine_version=ENGINE_VERSION,
             )
             session.add(trade)
             session.commit()
@@ -749,6 +755,20 @@ class TradingEngine:
                     self._record_trade_result(session, trade)
 
             session.commit()
+
+            # Check if we have enough v2.0 trades for ML training
+            if not self._ml_ready_notified:
+                v2_count = session.query(TradeResult).filter(
+                    TradeResult.engine_version == ENGINE_VERSION
+                ).count()
+                if v2_count >= ML_TRAINING_THRESHOLD:
+                    self._ml_ready_notified = True
+                    self.notifier.send(
+                        f"<b>ML TRAINING READY</b>\n"
+                        f"Collected {v2_count} closed trades (v{ENGINE_VERSION}).\n"
+                        f"Run: <code>python scripts/train_ml.py</code>"
+                    )
+                    logger.info(f"ML training threshold reached: {v2_count} trades")
         except Exception as e:
             session.rollback()
             logger.error(f"check_closed_trades error: {e}")
@@ -852,6 +872,7 @@ class TradingEngine:
             trade_duration_minutes=duration_minutes,
             risk_reward_planned=rr_planned,
             risk_reward_actual=rr_actual,
+            engine_version=ENGINE_VERSION,
         )
 
         # Try to attach ML confidence, features, and context from SignalLog
