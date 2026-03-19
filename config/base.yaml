@@ -43,9 +43,12 @@ timeframes:
 # --- إدارة المخاطر (واقعية — بيانات نظيفة للتدريب) ---
 risk:
   max_risk_per_trade: 0.01   # 1% per trade
-  max_daily_drawdown: 0.05   # 5% daily max drawdown
+  max_daily_drawdown: 0.05   # 5% daily max drawdown (unrealized)
+  max_daily_loss: 0.02       # IMP-17: 2% daily realized loss limit
   max_open_positions: 8      # صفقة واحدة لكل زوج
-  max_correlated_positions: 3
+  max_correlated_positions: 3  # IMP-30: max same-USD-direction positions
+  max_total_risk: 0.03       # IMP-18: 3% max portfolio risk at any time
+  min_sl_atr_multiplier: 1.5  # IMP-13: minimum SL distance in ATR units
 
 # --- جلب البيانات ---
 data:

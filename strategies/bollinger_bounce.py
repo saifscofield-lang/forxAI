@@ -1,7 +1,7 @@
 """
 استراتيجية ارتداد بولنجر — Bollinger Bounce Strategy
 شراء عند لمس الحد السفلي، بيع عند لمس الحد العلوي (Mean Reversion)
-استراتيجية عدوانية لجمع بيانات التدريب
+IMP-16: Only fire in range/low-volatility markets (BB Width filter)
 """
 import pandas as pd
 from loguru import logger
@@ -9,7 +9,9 @@ from features.technical.indicators import add_bollinger_bands, add_atr, add_rsi
 
 
 class BollingerBounceStrategy:
-    """Bollinger Bounce — buy at lower band, sell at upper band."""
+    """Bollinger Bounce — buy at lower band, sell at upper band.
+    IMP-16: Blocked when BB Width is wide (trending market).
+    """
 
     def __init__(
         self,
@@ -18,6 +20,7 @@ class BollingerBounceStrategy:
         atr_period: int = 14,
         atr_sl_multiplier: float = 2.0,
         atr_tp_multiplier: float = 3.0,
+        max_bb_width_pct: float = 0.03,  # IMP-16: max BB width as % of price
     ):
         self.name = "bollinger_bounce"
         self.symbol = symbol
@@ -25,6 +28,7 @@ class BollingerBounceStrategy:
         self.atr_period = atr_period
         self.atr_sl_multiplier = atr_sl_multiplier
         self.atr_tp_multiplier = atr_tp_multiplier
+        self.max_bb_width_pct = max_bb_width_pct
 
     def generate_signal(self, df: pd.DataFrame) -> dict | None:
         tmp = df.copy()
@@ -43,6 +47,11 @@ class BollingerBounceStrategy:
         bb_lower = float(curr["bb_lower"])
         atr = float(curr[atr_col])
         rsi = float(curr.get("rsi_14", 50))
+
+        # IMP-16: Block BB signals in trending/volatile markets
+        bb_width_pct = (bb_upper - bb_lower) / price if price > 0 else 0
+        if bb_width_pct > self.max_bb_width_pct:
+            return None  # BB too wide = trending market, skip
 
         signal_action = None
 

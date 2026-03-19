@@ -453,6 +453,8 @@ class TradingEngine:
         """Validate and execute a single signal.
 
         Returns (success, reason) for logging purposes.
+        Integrates: IMP-01 (tick_value sizing), IMP-13 (min SL),
+        IMP-19 (spread adjustment), IMP-30 (correlated check), IMP-18 (portfolio risk)
         """
         symbol = signal["symbol"]
         inst = self.instruments.get(symbol)
@@ -463,9 +465,9 @@ class TradingEngine:
         # Check risk limits
         open_positions = self.adapter.get_open_positions()
         if not self.risk_manager.can_open_trade(len(open_positions)):
-            return False, "Max positions or daily drawdown limit"
+            return False, "Max positions or daily drawdown/loss limit"
 
-        # Prevent conflicting directions on same symbol
+        # Prevent conflicting directions on same symbol (IMP-02)
         if len(open_positions) > 0:
             symbol_positions = open_positions[
                 open_positions["symbol"] == symbol
@@ -477,10 +479,18 @@ class TradingEngine:
                     return False, (
                         f"Conflicting {existing_dir} already open on {symbol}"
                     )
-                # Also limit max 1 position per symbol
                 return False, f"Position already open on {symbol}"
 
-        # H4 trend filter: only trade with the trend
+        # IMP-30: Check correlated exposure
+        if not open_positions.empty:
+            pos_list = open_positions[["symbol", "type"]].to_dict("records")
+            corr_ok, corr_reason = self.risk_manager.check_correlated_exposure(
+                symbol, signal["action"], pos_list
+            )
+            if not corr_ok:
+                return False, corr_reason
+
+        # H4 trend filter: only trade with the trend (IMP-10)
         h4_trend = signal.get("h4_trend")
         if h4_trend and h4_trend != "RANGE":
             action = signal["action"]
@@ -489,17 +499,59 @@ class TradingEngine:
             if h4_trend == "DOWN" and action == "BUY":
                 return False, f"H4 trend is DOWN, blocking BUY on {symbol}"
 
-        # Calculate position size using ATR-based stop loss
+        # IMP-15: Session filter — block low-liquidity hours
+        session_ok, session_reason = self._check_session(symbol)
+        if not session_ok:
+            return False, session_reason
+
         pip_value = inst["pip_value"]
         entry = signal["price"]
+        atr = signal.get("atr", 0)
+
+        # IMP-13: Enforce minimum SL distance
         sl = signal["stop_loss"]
+        if atr > 0:
+            sl = self.risk_manager.enforce_min_sl(
+                entry, sl, atr, signal["action"], pip_value
+            )
+            signal["stop_loss"] = sl
+
+        # IMP-19: Adjust SL/TP for spread
+        spread_info = self.adapter.get_symbol_info(symbol)
+        if spread_info:
+            spread_price = spread_info.get("spread", 0) * spread_info.get("point", 0)
+            if spread_price > 0:
+                if signal["action"] == "BUY":
+                    sl = sl - spread_price  # Widen SL by spread
+                    signal["take_profit"] = signal["take_profit"] - spread_price
+                else:
+                    sl = sl + spread_price
+                    signal["take_profit"] = signal["take_profit"] + spread_price
+                signal["stop_loss"] = round(sl, 5)
+                signal["take_profit"] = round(signal["take_profit"], 5)
+
         sl_pips = abs(entry - sl) / pip_value
 
+        # IMP-01: Use MT5 tick_value for accurate position sizing
+        sym_info = self.adapter.get_symbol_info(symbol)
+        tick_value = sym_info.get("trade_tick_value") if sym_info else None
+        tick_size = sym_info.get("trade_tick_size") if sym_info else None
+
+        account = self.adapter.get_account_info()
         lot_size = self.risk_manager.calculate_position_size(
-            balance=self.adapter.get_account_info()["balance"],
+            balance=account["balance"],
             stop_loss_pips=sl_pips,
             pip_value=pip_value,
+            tick_value=tick_value,
+            tick_size=tick_size,
         )
+
+        # IMP-18: Portfolio-level risk cap
+        new_risk = lot_size * sl_pips * (tick_value * (pip_value / tick_size) if tick_value and tick_size else pip_value * 100_000)
+        open_risk = self._calculate_open_risk(open_positions)
+        port_ok, port_reason = self.risk_manager.check_portfolio_risk(new_risk, open_risk)
+        if not port_ok:
+            return False, port_reason
 
         # Validate trade
         ok, msg = self.risk_manager.validate_trade(
@@ -525,10 +577,8 @@ class TradingEngine:
         )
 
         if result["success"]:
-            # Calculate slippage
             requested_price = signal["price"]
             filled_price = result["price"]
-            pip_value = inst["pip_value"]
             slippage_pips = abs(filled_price - requested_price) / pip_value
             signal["slippage_pips"] = round(slippage_pips, 2)
             signal["filled_price"] = filled_price
@@ -538,6 +588,58 @@ class TradingEngine:
             return True, ""
 
         return False, result.get("error", "Order failed")
+
+    def _check_session(self, symbol: str) -> tuple[bool, str]:
+        """Check if current hour is in active session for this symbol (IMP-15)."""
+        from datetime import datetime, timezone
+        utc_hour = datetime.now(timezone.utc).hour
+
+        # Define active sessions per symbol group
+        # London: 07-16, NY: 12-20, Tokyo: 00-08
+        eur_gbp_chf = ["EURUSD", "GBPUSD", "USDCHF"]
+        jpy_pairs = ["USDJPY"]
+        commodity = ["XAUUSD"]
+        aud_nzd = ["AUDUSD", "NZDUSD", "USDCAD"]
+
+        if symbol in eur_gbp_chf:
+            # London + NY overlap: 07-20 UTC
+            if not (7 <= utc_hour < 20):
+                return False, f"Session filter: {symbol} inactive at {utc_hour}:00 UTC (active 07-20)"
+        elif symbol in jpy_pairs:
+            # Tokyo + London: 00-16 UTC
+            if not (0 <= utc_hour < 16):
+                return False, f"Session filter: {symbol} inactive at {utc_hour}:00 UTC (active 00-16)"
+        elif symbol in commodity:
+            # London + NY: 07-20 UTC
+            if not (7 <= utc_hour < 20):
+                return False, f"Session filter: {symbol} inactive at {utc_hour}:00 UTC (active 07-20)"
+        elif symbol in aud_nzd:
+            # Sydney + London: 00-20 UTC (wide window for AUD/NZD)
+            if not (0 <= utc_hour < 20):
+                return False, f"Session filter: {symbol} inactive at {utc_hour}:00 UTC (active 00-20)"
+
+        return True, "OK"
+
+    def _calculate_open_risk(self, open_positions) -> float:
+        """Calculate total dollar risk of all open positions (IMP-18)."""
+        if open_positions.empty:
+            return 0.0
+
+        total_risk = 0.0
+        for _, pos in open_positions.iterrows():
+            sl = pos.get("sl", 0)
+            if sl and sl > 0:
+                inst = self.instruments.get(pos["symbol"])
+                if inst:
+                    pip_value = inst["pip_value"]
+                    sl_pips = abs(pos["open_price"] - sl) / pip_value
+                    sym_info = self.adapter.get_symbol_info(pos["symbol"])
+                    if sym_info and sym_info.get("trade_tick_value") and sym_info.get("trade_tick_size"):
+                        pip_cost = sym_info["trade_tick_value"] * (pip_value / sym_info["trade_tick_size"])
+                    else:
+                        pip_cost = pip_value * 100_000
+                    total_risk += pos["volume"] * sl_pips * pip_cost
+        return total_risk
 
     def _record_trade(self, signal: dict, result: dict, lot_size: float):
         """Save trade to database"""
@@ -674,6 +776,10 @@ class TradingEngine:
             close_time = now
             exit_reason = "UNKNOWN"
 
+        # IMP-17: Track realized losses for daily limit
+        if pnl < 0:
+            self.risk_manager.record_realized_loss(pnl)
+
         # Calculate pips
         inst = self.instruments.get(trade.symbol)
         pip_value = inst["pip_value"] if inst else 0.0001
@@ -782,6 +888,16 @@ class TradingEngine:
 
         signals, scan_details = self.scan_signals()
         executed = []
+
+        # IMP-31: Sort signals by strategy priority (best first)
+        STRATEGY_PRIORITY = {
+            "macd_crossover": 1,
+            "rsi_reversal": 2,
+            "bollinger_bounce": 3,
+            "sma_crossover": 4,
+            "ml_filtered_sma": 5,
+        }
+        signals.sort(key=lambda s: STRATEGY_PRIORITY.get(s.get("strategy", ""), 99))
 
         # Track signal counts for scan log
         counts = {
@@ -895,6 +1011,116 @@ class TradingEngine:
             logger.debug(f"Scan log save error: {e}")
         finally:
             session.close()
+
+    def monitor_positions(self):
+        """Monitor open positions: breakeven, trailing stop (IMP-07).
+
+        Called every 5 minutes by APScheduler. Manages SL dynamically:
+        Phase 1: Move SL to breakeven when price moves +1x ATR in favor
+        Phase 2: Trail SL at 1.0x ATR distance after breakeven
+        """
+        if not self.running:
+            return
+
+        positions = self.adapter.get_open_positions()
+        if positions.empty:
+            return
+
+        for _, pos in positions.iterrows():
+            try:
+                self._manage_position(pos)
+            except Exception as e:
+                logger.debug(f"Monitor error #{pos['ticket']}: {e}")
+
+    def _manage_position(self, pos):
+        """Manage a single open position's SL."""
+        symbol = pos["symbol"]
+        inst = self.instruments.get(symbol)
+        if not inst:
+            return
+
+        ticket = pos["ticket"]
+        entry_price = pos["open_price"]
+        current_price = pos["current_price"]
+        current_sl = pos.get("sl", 0)
+        action = pos["type"]  # "BUY" or "SELL"
+        pip_value = inst["pip_value"]
+
+        # Get current ATR for this symbol
+        df = self.adapter.get_ohlcv(symbol, "H1", 50)
+        if df.empty:
+            return
+        df = add_atr(df, 14)
+        atr_col = "atr_14"
+        atr_vals = df[atr_col].dropna()
+        if len(atr_vals) == 0:
+            return
+        atr = float(atr_vals.iloc[-1])
+
+        if atr <= 0:
+            return
+
+        # Calculate price movement in ATR units
+        if action == "BUY":
+            move_in_favor = current_price - entry_price
+        else:
+            move_in_favor = entry_price - current_price
+
+        atr_units_moved = move_in_favor / atr if atr > 0 else 0
+
+        # Phase 1: Breakeven — move SL to entry when +1x ATR in favor
+        if atr_units_moved >= 1.0:
+            if action == "BUY":
+                # SL should be at least at entry (breakeven)
+                breakeven_sl = entry_price + (pip_value * 2)  # +2 pips above entry for spread
+
+                # Phase 2: Trailing — trail at 1.0x ATR behind current price
+                trailing_sl = current_price - atr * 1.0
+
+                # Use whichever is higher (more protective)
+                target_sl = max(breakeven_sl, trailing_sl)
+
+                # Only move SL up, never down
+                if current_sl < target_sl:
+                    target_sl = round(target_sl, 5)
+                    result = self.adapter.modify_position(ticket, stop_loss=target_sl)
+                    if result.get("success"):
+                        action_type = "TRAILING" if trailing_sl > breakeven_sl else "BREAKEVEN"
+                        logger.info(
+                            f"[MONITOR] #{ticket} {symbol} BUY | {action_type} "
+                            f"SL: {current_sl:.5f} -> {target_sl:.5f} | "
+                            f"Move: {atr_units_moved:.1f}x ATR"
+                        )
+                        self.notifier.send(
+                            f"[MONITOR] #{ticket} {symbol} BUY\n"
+                            f"{action_type}: SL moved to {target_sl:.5f}\n"
+                            f"Price moved {atr_units_moved:.1f}x ATR in favor"
+                        )
+
+            else:  # SELL
+                breakeven_sl = entry_price - (pip_value * 2)
+
+                trailing_sl = current_price + atr * 1.0
+
+                # Use whichever is lower (more protective for SELL)
+                target_sl = min(breakeven_sl, trailing_sl)
+
+                # Only move SL down, never up
+                if current_sl == 0 or current_sl > target_sl:
+                    target_sl = round(target_sl, 5)
+                    result = self.adapter.modify_position(ticket, stop_loss=target_sl)
+                    if result.get("success"):
+                        action_type = "TRAILING" if trailing_sl < breakeven_sl else "BREAKEVEN"
+                        logger.info(
+                            f"[MONITOR] #{ticket} {symbol} SELL | {action_type} "
+                            f"SL: {current_sl:.5f} -> {target_sl:.5f} | "
+                            f"Move: {atr_units_moved:.1f}x ATR"
+                        )
+                        self.notifier.send(
+                            f"[MONITOR] #{ticket} {symbol} SELL\n"
+                            f"{action_type}: SL moved to {target_sl:.5f}\n"
+                            f"Price moved {atr_units_moved:.1f}x ATR in favor"
+                        )
 
     def _save_scan_details(self, scan_details: list):
         """Save per-symbol scan details to database."""

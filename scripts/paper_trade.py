@@ -55,44 +55,48 @@ def create_strategies(config):
     for symbol in instruments:
         params = opt_params.get(symbol, {})
 
-        # 1. SMA Crossover (original strategy, uses optimized params)
-        strategies.append(SMACrossoverStrategy(
-            symbol=symbol,
-            fast_period=int(params.get("fast_period", 20)),
-            slow_period=int(params.get("slow_period", 50)),
-            rsi_period=int(params.get("rsi_period", 14)),
-            atr_period=int(params.get("atr_period", 14)),
-            atr_sl_multiplier=float(params.get("atr_sl_mult", 1.5)),
-            atr_tp_multiplier=float(params.get("atr_tp_mult", 2.5)),
-        ))
+        # 1. SMA Crossover — DISABLED (IMP-03: 33% WR, -$1,522 net loss)
+        # Re-enable only after backtesting with H4 trend filter
+        # strategies.append(SMACrossoverStrategy(
+        #     symbol=symbol,
+        #     fast_period=int(params.get("fast_period", 20)),
+        #     slow_period=int(params.get("slow_period", 50)),
+        #     rsi_period=int(params.get("rsi_period", 14)),
+        #     atr_period=int(params.get("atr_period", 14)),
+        #     atr_sl_multiplier=float(params.get("atr_sl_mult", 1.5)),
+        #     atr_tp_multiplier=float(params.get("atr_tp_mult", 2.5)),
+        # ))
 
-        # 2. RSI Reversal (wider stops for H1)
+        # IMP-09: Use per-symbol optimized SL/TP multipliers
+        sl_mult = float(params.get("atr_sl_mult", 2.0))
+        tp_mult = float(params.get("atr_tp_mult", 3.0))
+
+        # 2. RSI Reversal
         strategies.append(RSIReversalStrategy(
             symbol=symbol,
             rsi_period=14,
             oversold=30.0,
             overbought=70.0,
-            atr_sl_multiplier=2.0,
-            atr_tp_multiplier=3.0,
+            atr_sl_multiplier=sl_mult,
+            atr_tp_multiplier=tp_mult,
         ))
 
-        # 3. MACD Crossover (wider stops for H1)
+        # 3. MACD Crossover (slightly wider than base)
         strategies.append(MACDCrossoverStrategy(
             symbol=symbol,
-            atr_sl_multiplier=2.5,
-            atr_tp_multiplier=3.5,
+            atr_sl_multiplier=sl_mult * 1.25,
+            atr_tp_multiplier=tp_mult * 1.15,
         ))
 
-        # 4. Bollinger Bounce (wider stops for H1)
+        # 4. Bollinger Bounce (IMP-16: range filter built in)
         strategies.append(BollingerBounceStrategy(
             symbol=symbol,
-            atr_sl_multiplier=2.0,
-            atr_tp_multiplier=3.0,
+            atr_sl_multiplier=sl_mult,
+            atr_tp_multiplier=tp_mult,
         ))
 
         logger.info(
-            f"  {symbol}: 4 strategies (SMA {params.get('fast_period', 20)}/"
-            f"{params.get('slow_period', 50)}, RSI, MACD, BB)"
+            f"  {symbol}: 3 strategies (RSI, MACD, BB) — SMA disabled (IMP-03)"
         )
 
     return strategies
@@ -214,6 +218,15 @@ def scan_and_trade():
         engine.notifier.send(f"<b>SCAN ERROR:</b>\n{e}")
 
 
+def monitor_positions():
+    """Monitor open positions for breakeven/trailing stops (IMP-07)."""
+    try:
+        if engine and engine.running:
+            engine.monitor_positions()
+    except Exception as e:
+        logger.debug(f"Position monitor error: {e}")
+
+
 def shutdown(signum=None, frame=None):
     """Graceful shutdown."""
     logger.info("Shutting down paper trading...")
@@ -301,7 +314,7 @@ def main():
     print(f"  Server:  {account['server']}")
     print(f"  Balance: ${account['balance']:,.2f}")
     print(f"  Symbols: {', '.join(symbols)}")
-    print(f"  Strategies per symbol: 4 (SMA, RSI, MACD, BB)")
+    print(f"  Strategies per symbol: 3 (RSI, MACD, BB) — SMA disabled")
     print(f"  Total strategy instances: {len(strategies)}")
     print(f"  Scan interval: every H1 candle")
     print(f"  Drive sync: every 6 hours")
@@ -337,6 +350,15 @@ def main():
             id="scan_h1",
             name="H1 Scan",
             misfire_grace_time=300,
+        )
+
+        # IMP-07: Monitor open positions every 5 minutes (breakeven + trailing)
+        scheduler.add_job(
+            monitor_positions,
+            trigger=CronTrigger(minute="*/5"),
+            id="monitor_positions",
+            name="Position Monitor",
+            misfire_grace_time=60,
         )
 
         try:

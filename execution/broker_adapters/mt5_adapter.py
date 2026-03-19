@@ -1,12 +1,17 @@
 """
 محوّل MetaTrader 5
 المسؤول عن: الاتصال، جلب البيانات، تنفيذ الأوامر
+IMP-05: Retry logic on all MT5 operations
+IMP-29: modify_position() for trailing stops
+IMP-01: get_symbol_info() for accurate pip value
 """
 import MetaTrader5 as mt5
 import pandas as pd
+import time as _time
 from datetime import datetime
 from loguru import logger
 from typing import Optional
+from functools import wraps
 import os
 
 
@@ -21,6 +26,33 @@ TIMEFRAME_MAP = {
     "D1":  mt5.TIMEFRAME_D1,
     "W1":  mt5.TIMEFRAME_W1,
 }
+
+
+def _retry(max_attempts: int = 3, delay: float = 2.0, fallback=None):
+    """Retry decorator for MT5 operations (IMP-05)."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_attempts:
+                        logger.warning(
+                            f"[RETRY] {func.__name__} attempt {attempt}/{max_attempts} "
+                            f"failed: {e} — retrying in {delay}s"
+                        )
+                        _time.sleep(delay)
+                    else:
+                        logger.error(
+                            f"[RETRY] {func.__name__} failed after {max_attempts} attempts: {e}"
+                        )
+            return fallback() if callable(fallback) else fallback
+        return wrapper
+    return decorator
 
 
 class MT5Adapter:
@@ -76,11 +108,12 @@ class MT5Adapter:
     # بيانات الحساب
     # ─────────────────────────────────────────
 
+    @_retry(max_attempts=3, delay=1.0, fallback=dict)
     def get_account_info(self) -> dict:
         """معلومات الحساب الكاملة"""
         info = mt5.account_info()
         if not info:
-            return {}
+            raise ConnectionError("MT5 account_info() returned None")
         return {
             "login":       info.login,
             "balance":     info.balance,
@@ -95,9 +128,32 @@ class MT5Adapter:
         }
 
     # ─────────────────────────────────────────
+    # معلومات الرموز (IMP-01)
+    # ─────────────────────────────────────────
+
+    def get_symbol_info(self, symbol: str) -> dict:
+        """Get symbol trading specifications from MT5 for accurate position sizing."""
+        info = mt5.symbol_info(symbol)
+        if not info:
+            return {}
+        return {
+            "symbol": symbol,
+            "point": info.point,
+            "digits": info.digits,
+            "trade_tick_value": info.trade_tick_value,
+            "trade_tick_size": info.trade_tick_size,
+            "trade_contract_size": info.trade_contract_size,
+            "volume_min": info.volume_min,
+            "volume_max": info.volume_max,
+            "volume_step": info.volume_step,
+            "spread": info.spread,
+        }
+
+    # ─────────────────────────────────────────
     # بيانات السوق
     # ─────────────────────────────────────────
 
+    @_retry(max_attempts=3, delay=2.0, fallback=pd.DataFrame)
     def get_ohlcv(
         self,
         symbol: str,
@@ -115,8 +171,7 @@ class MT5Adapter:
 
         rates = mt5.copy_rates_from_pos(symbol, tf, 0, bars)
         if rates is None or len(rates) == 0:
-            logger.warning(f"لا توجد بيانات لـ {symbol} {timeframe}")
-            return pd.DataFrame()
+            raise ConnectionError(f"No data for {symbol} {timeframe}")
 
         df = pd.DataFrame(rates)
         df["time"] = pd.to_datetime(df["time"], unit="s")
@@ -161,6 +216,7 @@ class MT5Adapter:
             return mt5.ORDER_FILLING_IOC
         return mt5.ORDER_FILLING_RETURN
 
+    @_retry(max_attempts=3, delay=2.0)
     def place_order(
         self,
         symbol: str,
@@ -170,11 +226,10 @@ class MT5Adapter:
         take_profit: float = 0.0,
         comment: str = "ForexAI",
     ) -> dict:
-        """تنفيذ أمر تداول"""
+        """تنفيذ أمر تداول مع retry (IMP-05)"""
         tick = mt5.symbol_info_tick(symbol)
         if not tick:
-            logger.error(f"لا يمكن جلب سعر {symbol}")
-            return {"success": False}
+            raise ConnectionError(f"Cannot get tick for {symbol}")
 
         price = tick.ask if order_type == "BUY" else tick.bid
         order = mt5.ORDER_TYPE_BUY if order_type == "BUY" else mt5.ORDER_TYPE_SELL
@@ -203,7 +258,85 @@ class MT5Adapter:
             f"Order executed | {order_type} {volume} {symbol} @ {price:.5f} | "
             f"Ticket: {result.order}"
         )
-        return {"success": True, "ticket": result.order, "price": price}
+        return {"success": True, "ticket": result.order, "price": price, "volume": volume}
+
+    def modify_position(
+        self,
+        ticket: int,
+        stop_loss: float = None,
+        take_profit: float = None,
+    ) -> dict:
+        """تعديل SL/TP لصفقة مفتوحة (IMP-29)"""
+        position = mt5.positions_get(ticket=ticket)
+        if not position:
+            logger.error(f"Position {ticket} not found for modification")
+            return {"success": False, "error": "Position not found"}
+
+        pos = position[0]
+        new_sl = stop_loss if stop_loss is not None else pos.sl
+        new_tp = take_profit if take_profit is not None else pos.tp
+
+        request = {
+            "action":    mt5.TRADE_ACTION_SLTP,
+            "symbol":    pos.symbol,
+            "position":  ticket,
+            "sl":        new_sl,
+            "tp":        new_tp,
+            "magic":     20240101,
+        }
+
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(
+                f"Modify failed #{ticket}: {result.comment} (code: {result.retcode})"
+            )
+            return {"success": False, "error": result.comment}
+
+        logger.info(
+            f"Position #{ticket} modified | SL={new_sl:.5f} TP={new_tp:.5f}"
+        )
+        return {"success": True, "sl": new_sl, "tp": new_tp}
+
+    def partial_close(self, ticket: int, volume: float) -> dict:
+        """إغلاق جزئي لصفقة مفتوحة (IMP-07 Phase 3)"""
+        position = mt5.positions_get(ticket=ticket)
+        if not position:
+            logger.error(f"Position {ticket} not found for partial close")
+            return {"success": False, "error": "Position not found"}
+
+        pos = position[0]
+        close_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
+        tick = mt5.symbol_info_tick(pos.symbol)
+        price = tick.bid if pos.type == 0 else tick.ask
+
+        # Round volume to step
+        info = mt5.symbol_info(pos.symbol)
+        if info:
+            step = info.volume_step
+            volume = round(round(volume / step) * step, 2)
+            volume = max(volume, info.volume_min)
+
+        request = {
+            "action":      mt5.TRADE_ACTION_DEAL,
+            "symbol":      pos.symbol,
+            "volume":      volume,
+            "type":        close_type,
+            "position":    ticket,
+            "price":       price,
+            "deviation":   20,
+            "magic":       20240101,
+            "comment":     "ForexAI Partial",
+            "type_time":   mt5.ORDER_TIME_GTC,
+            "type_filling": self._get_filling_mode(pos.symbol),
+        }
+
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"Partial close failed #{ticket}: {result.comment}")
+            return {"success": False, "error": result.comment}
+
+        logger.info(f"Partial close #{ticket}: {volume} lots @ {price:.5f}")
+        return {"success": True, "volume_closed": volume, "price": price}
 
     def close_position(self, ticket: int) -> dict:
         """إغلاق صفقة مفتوحة"""
@@ -254,6 +387,8 @@ class MT5Adapter:
                 "volume":      p.volume,
                 "open_price":  p.price_open,
                 "current_price": p.price_current,
+                "sl":          p.sl,
+                "tp":          p.tp,
                 "profit":      p.profit,
                 "swap":        p.swap,
                 "open_time":   datetime.fromtimestamp(p.time),
