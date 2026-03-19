@@ -40,7 +40,7 @@ scan_count = 0
 
 
 def create_strategies(config):
-    """Create all strategies for all symbols — no ML filter, maximum signals."""
+    """Create all strategies for all symbols - no ML filter, maximum signals."""
     strategies = []
 
     # Load optimized SMA params (if available)
@@ -55,7 +55,7 @@ def create_strategies(config):
     for symbol in instruments:
         params = opt_params.get(symbol, {})
 
-        # 1. SMA Crossover — DISABLED (IMP-03: 33% WR, -$1,522 net loss)
+        # 1. SMA Crossover - DISABLED (IMP-03: 33% WR, -$1,522 net loss)
         # Re-enable only after backtesting with H4 trend filter
         # strategies.append(SMACrossoverStrategy(
         #     symbol=symbol,
@@ -96,7 +96,7 @@ def create_strategies(config):
         ))
 
         logger.info(
-            f"  {symbol}: 3 strategies (RSI, MACD, BB) — SMA disabled (IMP-03)"
+            f"  {symbol}: 3 strategies (RSI, MACD, BB) - SMA disabled (IMP-03)"
         )
 
     return strategies
@@ -267,7 +267,7 @@ def main():
     # -- Banner --
     print()
     print("=" * 60)
-    print("     ForexAI Paper Trading — CLEAN DATA COLLECTION")
+    print("     ForexAI Paper Trading - CLEAN DATA COLLECTION")
     print("     Strategies: SMA + RSI + MACD + Bollinger (x8 symbols)")
     print(f"     Mode: {'Single scan' if args.once else 'Continuous (H1 candle)'}")
     print("=" * 60)
@@ -281,7 +281,7 @@ def main():
         config = yaml.safe_load(f)
 
     # -- Create strategies (no ML filter) --
-    logger.info("Creating strategies (data collection mode — no ML filter)...")
+    logger.info("Creating strategies (data collection mode - no ML filter)...")
     strategies = create_strategies(config)
     logger.info(f"Total strategies: {len(strategies)}")
 
@@ -314,7 +314,7 @@ def main():
     print(f"  Server:  {account['server']}")
     print(f"  Balance: ${account['balance']:,.2f}")
     print(f"  Symbols: {', '.join(symbols)}")
-    print(f"  Strategies per symbol: 3 (RSI, MACD, BB) — SMA disabled")
+    print(f"  Strategies per symbol: 3 (RSI, MACD, BB) - SMA disabled")
     print(f"  Total strategy instances: {len(strategies)}")
     print(f"  Scan interval: every H1 candle")
     print(f"  Drive sync: every 6 hours")

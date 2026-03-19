@@ -1,0 +1,142 @@
+============================================================
+  FOREXAI TRADING PERFORMANCE REPORT
+  Period: March 18, 2026 (Post-Optimization)
+  Account: 5047751974 (MetaQuotes Demo)
+  Initial Balance: $100,000.00
+============================================================
+
+OVERALL SUMMARY
+------------------------------------------------------------
+Total Closed Trades:     50
+Winning Trades:          26  (52.0%)
+Losing Trades:           24  (48.0%)
+Total Gross Profit:      $11,756.46
+Total Gross Loss:        -$7,233.31
+NET PROFIT:              +$4,523.15
+Profit Factor:           1.63
+All Losses Exit Type:    SL_HIT (100%)
+All Wins Exit Type:      TP_HIT (100%)
+Open Positions:          2 (EURUSD BUY, XAUUSD BUY)
+
+============================================================
+PERFORMANCE BY STRATEGY
+------------------------------------------------------------
+Strategy            Trades  Wins  Losses  Win%   Net PnL
+------------------------------------------------------------
+MACD Crossover        17      9      8    53%   +$1,671.90
+Bollinger Bounce      13      7      6    54%   +$1,434.65
+RSI Reversal           9      4      5    44%     -$76.67
+SMA Crossover          9      3      6    33%   -$1,522.28
+ML Filtered SMA        1      0      1     0%     -$18.14
+------------------------------------------------------------
+Best Strategy: Bollinger Bounce (54% win, consistent)
+Worst Strategy: SMA Crossover (33% win, heavy losses)
+
+============================================================
+PERFORMANCE BY SYMBOL
+------------------------------------------------------------
+Symbol     Trades  Wins  Losses  Win%   Net PnL
+------------------------------------------------------------
+XAUUSD       14      7      7    50%   +$24.80
+NZDUSD       12      6      6    50%   +$1,340.00
+EURUSD        5      3      2    60%   +$1,440.00
+GBPUSD        5      3      2    60%   +$910.00
+USDCHF        7      4      3    57%   +$902.61
+AUDUSD        2      2      0   100%   +$1,760.00
+USDJPY        4      1      3    25%   -$17.47
+USDCAD        2      1      1    50%   +$51.05
+------------------------------------------------------------
+Best Symbol: AUDUSD (100% win rate, +$1,760)
+Worst Symbol: USDJPY (25% win rate, all buys in downtrend)
+
+============================================================
+ROOT CAUSE ANALYSIS OF LOSSES
+------------------------------------------------------------
+
+1. SMA CROSSOVER STRATEGY - POOR SIGNAL QUALITY (33% Win)
+   - 6 of 9 trades hit SL
+   - SMA is a lagging indicator; enters after the move
+   - Worst on XAUUSD (3 losses) and NZDUSD (2 losses)
+   - Often contradicts faster strategies on same symbol
+   Recommendation: DISABLE or add trend confirmation filter
+
+2. CONFLICTING TRADES ON SAME SYMBOL
+   - Multiple strategies open opposite positions simultaneously
+   - Example: XAUUSD at 02:02 had BUY (MACD) + BUY (SMA)
+     with different SL/TP levels, one won and one lost
+   - Strategies cancel each other's edge
+   Recommendation: Allow only ONE position per symbol at a time
+
+3. USDJPY - BUYING INTO A DOWNTREND
+   - All 4 trades were BUY signals (RSI reversal, BB bounce)
+   - RSI was 28-32 (oversold) but trend continued down
+   - Mean-reversion strategies failed in trending market
+   Recommendation: Add H4 trend filter; block counter-trend entries
+
+4. STOP LOSS TOO TIGHT ON SOME PAIRS
+   - 100% of losses are SL_HIT (no partial exits)
+   - USDCHF: SL at ~2.4-2.9 pips (ATR ~2.5 pips)
+   - GBPUSD bollinger_bounce: SL at 4.1 pips (tight for GBP)
+   - Price often reversed after hitting SL
+   Recommendation: Widen SL to at least 1.5x ATR minimum
+
+5. RSI REVERSAL IN TRENDING MARKETS
+   - 5 of 9 trades lost (44% win rate)
+   - Tries to catch reversals but fails when trend is strong
+   - Lost on USDJPY (-$50), GBPUSD (-$480), EURUSD (-$450)
+   Recommendation: Only trade RSI reversal in ranging markets
+
+6. ML FILTERED SMA - NO MODELS LOADED
+   - Only 1 trade taken, lost -$18.14 on XAUUSD
+   - ML models not found (EURUSD, GBPUSD, XAUUSD)
+   - Running without ML filtering defeats the purpose
+   Recommendation: Train and deploy ML models before enabling
+
+============================================================
+DETAILED LOSS LOG
+------------------------------------------------------------
+#   Symbol   Strategy          Action  PnL        Duration
+------------------------------------------------------------
+1   XAUUSD   macd_crossover    SELL    -$8.14     3h 16m
+2   XAUUSD   sma_crossover     SELL    -$6.81     2h 47m
+7   XAUUSD   sma_crossover     BUY     -$7.57     4h 50m
+8   NZDUSD   macd_crossover    BUY     -$560.00   2h 49m
+9   XAUUSD   macd_crossover    SELL    -$8.79     2h 33m
+10  NZDUSD   macd_crossover    SELL    -$470.00   2h 11m
+12  NZDUSD   sma_crossover     SELL    -$550.00   2h 25m
+14  XAUUSD   sma_crossover     BUY     -$8.89     3h 01m
+15  NZDUSD   macd_crossover    SELL    -$470.00   4h 05m
+16  GBPUSD   bollinger_bounce  SELL    -$410.00   2h 06m
+17  USDJPY   bollinger_bounce  BUY     -$12.70    2h 09m
+18  XAUUSD   sma_crossover     SELL    -$7.07     2h 07m
+19  NZDUSD   sma_crossover     SELL    -$600.00   7h 25m
+21  EURUSD   bollinger_bounce  SELL    -$410.00   2h 36m
+24  USDJPY   bollinger_bounce  BUY     -$11.65    2h 56m
+25  USDJPY   rsi_reversal      BUY     -$12.53    2h 18m
+26  USDJPY   rsi_reversal      BUY     -$13.53    2h 10m
+27  GBPUSD   rsi_reversal      SELL    -$480.00   2h 20m
+30  USDCHF   bollinger_bounce  SELL    -$305.34   2h 14m
+34  USDCHF   bollinger_bounce  SELL    -$330.66   2h 02m
+39  USDCHF   bollinger_bounce  SELL    -$368.59   2h 31m
+40  EURUSD   rsi_reversal      BUY     -$450.00   2h 20m
+41  USDCAD   macd_crossover    SELL    -$342.90   2h 09m
+47  XAUUSD   ml_filtered_sma   BUY     -$18.14    9h 30m
+48  GBPUSD   macd_crossover    BUY     -$840.00   2h 30m
+49  NZDUSD   macd_crossover    BUY     -$530.00   2h 31m
+
+============================================================
+RECOMMENDED ACTIONS (Priority Order)
+------------------------------------------------------------
+[HIGH]   Disable SMA Crossover strategy until improved
+[HIGH]   Enforce one-position-per-symbol rule across strategies
+[HIGH]   Add H4 trend filter to prevent counter-trend entries
+[MEDIUM] Widen stop losses to minimum 1.5x ATR
+[MEDIUM] Add ranging/trending market detection for RSI reversal
+[MEDIUM] Train ML models before enabling ml_filtered_sma
+[LOW]    Consider removing USDJPY until strategy is adapted
+[LOW]    Add trailing stop for trades that move significantly
+
+============================================================
+  Report generated: 2026-03-19
+  ForexAI Paper Trading System v1.0
+============================================================

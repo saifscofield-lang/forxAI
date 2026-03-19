@@ -116,7 +116,19 @@ class TradingEngine:
             detail["h4_trend"] = market_ctx.get("h4_trend")
             detail["volatility"] = market_ctx.get("volatility_regime")
 
-            # ── Compute SMA diagnostic for this symbol ──
+            # ── Compute basic indicators for logging ──
+            try:
+                _tmp = df_h1.copy()
+                _tmp = add_rsi(_tmp, 14)
+                _tmp = add_atr(_tmp, 14)
+                _last = _tmp.dropna(subset=["rsi_14", "atr_14"])
+                if len(_last) > 0:
+                    detail["rsi"] = float(_last.iloc[-1]["rsi_14"])
+                    detail["atr"] = float(_last.iloc[-1]["atr_14"])
+                    detail["price"] = float(_last.iloc[-1]["close"])
+            except Exception:
+                pass
+
             # Track all signals from all strategies for this symbol
             symbol_signals = []
 
@@ -940,6 +952,10 @@ class TradingEngine:
                 executed.append(signal)
             else:
                 counts["risk_rejected"] += 1
+                logger.warning(
+                    f"REJECTED: {signal['action']} {signal['symbol']} "
+                    f"[{signal.get('strategy', '?')}] | Reason: {reject_reason}"
+                )
                 self._log_signal(signal, "RISK_REJECTED", reason=reject_reason)
                 self.notifier.signal_filtered(signal, reason=reject_reason)
 
