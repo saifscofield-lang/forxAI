@@ -1105,14 +1105,14 @@ class TradingEngine:
 
         atr_units_moved = move_in_favor / atr if atr > 0 else 0
 
-        # Phase 1: Breakeven — move SL to entry when +1x ATR in favor
-        if atr_units_moved >= 1.0:
+        # Phase 1: Breakeven — move SL to entry when +0.3x ATR in favor
+        if atr_units_moved >= 0.3:
             if action == "BUY":
                 # SL should be at least at entry (breakeven)
                 breakeven_sl = entry_price + (pip_value * 2)  # +2 pips above entry for spread
 
-                # Phase 2: Trailing — trail at 1.0x ATR behind current price
-                trailing_sl = current_price - atr * 1.0
+                # Phase 2: Trailing — trail at 0.5x ATR behind current price
+                trailing_sl = current_price - atr * 0.5
 
                 # Use whichever is higher (more protective)
                 target_sl = max(breakeven_sl, trailing_sl)
@@ -1135,14 +1135,15 @@ class TradingEngine:
                         )
 
             else:  # SELL
-                breakeven_sl = entry_price - (pip_value * 2)
+                breakeven_sl = entry_price - (pip_value * 2)  # just below entry
 
-                trailing_sl = current_price + atr * 1.0
+                trailing_sl = current_price + atr * 0.5  # trail above current price
 
-                # Use whichever is lower (more protective for SELL)
+                # For SELL: lower SL = more protective (closer to current price)
+                # Use whichever is lower (tighter to price)
                 target_sl = min(breakeven_sl, trailing_sl)
 
-                # Only move SL down, never up
+                # Only move SL DOWN (more protective for SELL), never up
                 if current_sl == 0 or current_sl > target_sl:
                     target_sl = round(target_sl, 5)
                     result = self.adapter.modify_position(ticket, stop_loss=target_sl)
