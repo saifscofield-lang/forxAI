@@ -1213,13 +1213,13 @@ class TradingEngine:
                                  atr, trail_mult=0.7, digits=digits, phase="P4-TIGHT")
             return
 
-        # ── Phase 3: Trail at 1.0x ATR after partial close ──
+        # ── Phase 3: Trail at 0.5x ATR after partial close ──
         if state["tp1_closed"]:
             if state["phase"] < 3:
                 state["phase"] = 3
                 logger.info(f"[MONITOR] #{ticket} {symbol} → Phase 3 (trailing)")
             self._apply_trailing(ticket, symbol, action, current_price, current_sl,
-                                 atr, trail_mult=1.0, digits=digits, phase="P3-TRAIL")
+                                 atr, trail_mult=0.5, digits=digits, phase="P3-TRAIL")
             return
 
         # ── Phase 2: Partial close at original TP ──
@@ -1267,8 +1267,8 @@ class TradingEngine:
                         )
                         return
 
-        # ── Phase 1: Breakeven at +1.0x ATR ──
-        if atr_units_moved >= 1.0 and state["phase"] < 1:
+        # ── Phase 1: Breakeven at +0.3x ATR ──
+        if atr_units_moved >= 0.3 and state["phase"] < 1:
             if action == "BUY":
                 be_sl = entry_price + (pip_value * 2)
             else:
