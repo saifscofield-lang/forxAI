@@ -1222,6 +1222,11 @@ class TradingEngine:
                                  atr, trail_mult=0.5, digits=digits, phase="P3-TRAIL")
             return
 
+        # ── Phase 1.5: Trail at 0.5x ATR after breakeven, before TP ──
+        if state["phase"] >= 1 and not state["tp1_closed"] and atr_units_moved >= 0.5:
+            self._apply_trailing(ticket, symbol, action, current_price, current_sl,
+                                 atr, trail_mult=0.5, digits=digits, phase="P1-TRAIL")
+
         # ── Phase 2: Partial close at original TP ──
         original_tp = state["original_tp"]
         if original_tp > 0 and not state["tp1_closed"]:
