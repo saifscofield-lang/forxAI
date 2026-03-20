@@ -135,22 +135,37 @@ if run_clicked:
 
     with st.spinner(f"جاري تشغيل الاختبار لـ {symbol}..."):
         try:
-            from backtest.fast_backtest import FastBacktester
+            from backtest.fast_backtest import fast_backtest
+            from features.technical.indicators import add_sma, add_rsi, add_atr
 
             data_file = f"data/raw/{symbol}/{timeframe}.parquet"
             if not os.path.exists(data_file):
                 st.error(f"لا توجد بيانات: {data_file}")
             else:
                 df = pd.read_parquet(data_file)
-                bt = FastBacktester(
-                    sma_fast=sma_fast,
-                    sma_slow=sma_slow,
-                    rsi_period=rsi_period,
-                    atr_period=atr_period,
-                    sl_mult=sl_mult,
-                    tp_mult=tp_mult,
+
+                # Compute indicators
+                df = add_sma(df, sma_fast)
+                df = add_sma(df, sma_slow)
+                df = add_rsi(df, rsi_period)
+                df = add_atr(df, atr_period)
+
+                # Determine pip value
+                pip_value = 0.01 if "JPY" in symbol else (0.1 if symbol == "XAUUSD" else 0.0001)
+
+                result = fast_backtest(
+                    close=df["close"].values,
+                    high=df["high"].values,
+                    low=df["low"].values,
+                    times=df.index.values if hasattr(df.index, 'values') else df.index,
+                    sma_fast=df[f"sma_{sma_fast}"].values,
+                    sma_slow=df[f"sma_{sma_slow}"].values,
+                    rsi=df[f"rsi_{rsi_period}"].values,
+                    atr=df[f"atr_{atr_period}"].values,
+                    atr_sl_mult=sl_mult,
+                    atr_tp_mult=tp_mult,
+                    pip_value=pip_value,
                 )
-                result = bt.run(df, symbol=symbol)
                 st.session_state.bt_results = result
                 st.success("اكتمل الاختبار!")
         except ImportError as e:
@@ -179,8 +194,8 @@ if results is not None:
     win_rate = _get(results, "win_rate") * 100 if _get(results, "win_rate", default=0) <= 1 else _get(results, "win_rate")
     profit_factor = _get(results, "profit_factor")
     total_pnl = _get(results, "total_pnl", "pnl")
-    max_dd = _get(results, "max_drawdown")
-    sharpe = _get(results, "sharpe")
+    max_dd = _get(results, "max_drawdown_pct", "max_drawdown")
+    sharpe = _get(results, "sharpe_ratio", "sharpe")
 
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:

@@ -270,7 +270,7 @@ if not recent_signals.empty:
     st.dataframe(
         recent_signals[cols_present].style.format({
             "price": "{:.5f}",
-            "ml_confidence": lambda x: f"{x:.1%}" if x == x else "—",
+            "ml_confidence": lambda x: f"{x:.1%}" if x is not None and x == x else "-",
         }),
         use_container_width=True,
         hide_index=True,

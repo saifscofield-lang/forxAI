@@ -135,9 +135,14 @@ def run_scan(use_ml: bool = True) -> list:
         if not engine.start():
             return []
 
-        signals = engine.scan_signals()
+        result = engine.scan_signals()
         engine.stop()
-        return signals if signals else []
+        # scan_signals returns (signals, scan_details) tuple
+        if isinstance(result, tuple):
+            signals = result[0] if result[0] else []
+        else:
+            signals = result if result else []
+        return signals
     except Exception as e:
         return [{"error": str(e)}]
 
