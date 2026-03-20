@@ -102,9 +102,30 @@ def create_strategies(config):
     return strategies
 
 
+def _is_market_open():
+    """Check if forex market is open (closed Sat 00:00 - Sun 22:00 UTC approx)."""
+    from datetime import timezone
+    now_utc = datetime.now(timezone.utc)
+    weekday = now_utc.weekday()  # 0=Mon, 5=Sat, 6=Sun
+    hour = now_utc.hour
+    # Closed: Friday ~22:00 UTC to Sunday ~22:00 UTC
+    if weekday == 5:  # Saturday
+        return False
+    if weekday == 6 and hour < 22:  # Sunday before 22:00
+        return False
+    if weekday == 4 and hour >= 22:  # Friday after 22:00
+        return False
+    return True
+
+
 def scan_and_trade():
     """Single scan cycle -- called by scheduler every H1 candle."""
     global scan_count
+
+    if not _is_market_open():
+        logger.info("Market closed (weekend) - skipping scan")
+        return
+
     scan_count += 1
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -221,6 +242,8 @@ def scan_and_trade():
 def monitor_positions():
     """Monitor open positions for breakeven/trailing stops (IMP-07)."""
     try:
+        if not _is_market_open():
+            return
         if engine and engine.running:
             engine.monitor_positions()
     except Exception as e:
