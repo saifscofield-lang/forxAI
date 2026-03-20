@@ -63,6 +63,30 @@ if positions_df is not None and not positions_df.empty:
 
     display_df = positions_df.copy()
 
+    # ── Add Monitor Phase Info ────────────────────────────────────────────────
+    from dashboard.utils.db import get_monitor_states
+    monitor_states = get_monitor_states()
+
+    PHASE_LABELS = {
+        0: "⏳ انتظار",
+        1: "🔒 بريك إيفن",
+        2: "🎯 TP1 (50%)",
+        3: "📈 تتبع",
+        4: "🔥 تتبع ضيق",
+    }
+
+    ticket_col = "ticket" if "ticket" in display_df.columns else None
+    if ticket_col:
+        display_df["المرحلة"] = display_df[ticket_col].apply(
+            lambda t: PHASE_LABELS.get(monitor_states.get(t, {}).get("phase", 0), "⏳ انتظار")
+        )
+        display_df["إغلاق جزئي"] = display_df[ticket_col].apply(
+            lambda t: "✅" if monitor_states.get(t, {}).get("tp1_closed", False) else "—"
+        )
+        display_df["الحجم الأصلي"] = display_df[ticket_col].apply(
+            lambda t: monitor_states.get(t, {}).get("original_volume")
+        )
+
     # Identify P&L column (different MT5 adapters may use different names)
     pnl_col = None
     for candidate in ["profit", "pnl", "unrealized_pnl"]:
@@ -79,6 +103,8 @@ if positions_df is not None and not positions_df.empty:
         fmt[pnl_col] = "${:+,.2f}"
     if "volume" in display_df.columns:
         fmt["volume"] = "{:.2f}"
+    if "الحجم الأصلي" in display_df.columns:
+        fmt["الحجم الأصلي"] = lambda x: f"{x:.2f}" if pd.notna(x) else "—"
 
     styled = display_df.style.format(fmt)
     if pnl_col:

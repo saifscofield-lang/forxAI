@@ -11,7 +11,7 @@ import pandas as pd
 
 sys.path.insert(0, ".")
 
-from storage.database import SessionLocal, Trade, SignalLog, TradeResult, AccountSnapshot, NewsEvent, ScanLog, MarketContext
+from storage.database import SessionLocal, Trade, SignalLog, TradeResult, AccountSnapshot, NewsEvent, ScanLog, MarketContext, MonitorState
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,6 +83,27 @@ def get_open_trades() -> pd.DataFrame:
             .all()
         )
         return _trades_to_df(rows)
+    finally:
+        session.close()
+
+
+def get_monitor_states() -> dict:
+    """Return monitor states as {ticket: {phase, tp1_closed, ...}}."""
+    session = _session()
+    try:
+        rows = session.query(MonitorState).all()
+        states = {}
+        for r in rows:
+            states[r.ticket] = {
+                "phase": r.phase,
+                "tp1_closed": r.tp1_closed,
+                "original_volume": r.original_volume,
+                "original_tp": r.original_tp,
+                "updated_at": r.updated_at,
+            }
+        return states
+    except Exception:
+        return {}
     finally:
         session.close()
 

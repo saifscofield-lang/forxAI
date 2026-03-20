@@ -325,6 +325,21 @@ class IndicatorSnapshot(Base):
     )
 
 
+class MonitorState(Base):
+    """حالة المونيتور لكل صفقة مفتوحة — تُحفظ لمنع فقدان الحالة عند إعادة التشغيل."""
+    __tablename__ = "monitor_states"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    ticket          = Column(Integer, unique=True, nullable=False, index=True)
+    symbol          = Column(String(20), nullable=False)
+    phase           = Column(Integer, default=0)              # 0-4
+    tp1_closed      = Column(Boolean, default=False)          # Was 50% partial close done?
+    original_volume = Column(Float, nullable=True)            # Volume at entry
+    original_tp     = Column(Float, nullable=True)            # TP at entry
+    entry_atr       = Column(Float, nullable=True)            # ATR at entry time
+    updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db():
     """إنشاء جداول قاعدة البيانات"""
     os.makedirs("data", exist_ok=True)

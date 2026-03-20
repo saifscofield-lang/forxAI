@@ -15,12 +15,13 @@ from risk.risk_manager import RiskManager
 from storage.database import (
     SessionLocal, Trade, AccountSnapshot, SignalLog, TradeResult,
     MarketContext, ScanLog, SymbolScanDetail, IndicatorSnapshot,
+    MonitorState,
 )
 from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
 
 
-ENGINE_VERSION = "2.0"  # Post-improvements (2026-03-19): 3 strategies, trailing SL, news filter
+ENGINE_VERSION = "2.1"  # Hybrid monitor: scaled TP, partial close, dynamic trailing
 ML_TRAINING_THRESHOLD = 200  # Minimum closed trades needed for ML training
 
 
@@ -44,6 +45,17 @@ class TradingEngine:
         self.scan_count = 0
         self._ml_ready_notified = False  # Track if we already sent ML-ready notification
 
+        # Hybrid Monitor: per-position state tracking (loaded from DB on start)
+        # {ticket: {"phase": int, "tp1_closed": bool, "original_volume": float, "original_tp": float, "entry_atr": float}}
+        self._position_states = {}
+
+        # Load optimized params for TP multipliers
+        try:
+            with open("data/optimized_params.yaml", "r") as f:
+                self._optimized_params = yaml.safe_load(f) or {}
+        except Exception:
+            self._optimized_params = {}
+
     def set_news_filter(self, news_filter):
         """Set news filter for blocking trades during high-impact events."""
         self.news_filter = news_filter
@@ -63,18 +75,66 @@ class TradingEngine:
         account = self.adapter.get_account_info()
         self.risk_manager.set_balance(account["balance"])
         self.running = True
+        self._load_monitor_states()
         logger.success(
             f"Engine started | Balance: ${account['balance']:,.2f} | "
             f"Strategies: {len(self.strategies)} | "
-            f"Instruments: {list(self.instruments.keys())}"
+            f"Instruments: {list(self.instruments.keys())} | "
+            f"Monitor states restored: {len(self._position_states)}"
         )
         return True
 
     def stop(self):
         """Shutdown engine"""
         self.running = False
+        self._save_monitor_states()
         self.adapter.disconnect()
         logger.info("Engine stopped")
+
+    def _load_monitor_states(self):
+        """Load persisted monitor states from DB for open positions."""
+        session = SessionLocal()
+        try:
+            states = session.query(MonitorState).all()
+            for s in states:
+                self._position_states[s.ticket] = {
+                    "phase": s.phase,
+                    "tp1_closed": s.tp1_closed,
+                    "original_volume": s.original_volume,
+                    "original_tp": s.original_tp,
+                    "entry_atr": s.entry_atr,
+                    "symbol": s.symbol,
+                }
+            if states:
+                logger.info(f"[MONITOR] Restored {len(states)} position states from DB")
+        except Exception as e:
+            logger.debug(f"Monitor state load error: {e}")
+        finally:
+            session.close()
+
+    def _save_monitor_states(self):
+        """Persist all current monitor states to DB."""
+        session = SessionLocal()
+        try:
+            # Clear old states and write current ones
+            session.query(MonitorState).delete()
+            for ticket, state in self._position_states.items():
+                ms = MonitorState(
+                    ticket=ticket,
+                    symbol=state.get("symbol", "UNKNOWN"),
+                    phase=state.get("phase", 0),
+                    tp1_closed=state.get("tp1_closed", False),
+                    original_volume=state.get("original_volume"),
+                    original_tp=state.get("original_tp"),
+                    entry_atr=state.get("entry_atr"),
+                )
+                session.add(ms)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Monitor state save error: {e}")
+        finally:
+            session.close()
 
     def scan_signals(self) -> tuple[list[dict], list[dict]]:
         """Run all strategies on all instruments, collect all signals.
@@ -1050,27 +1110,60 @@ class TradingEngine:
             session.close()
 
     def monitor_positions(self):
-        """Monitor open positions: breakeven, trailing stop (IMP-07).
+        """Hybrid Monitor: breakeven, partial close at TP1, dynamic TP2, trailing.
 
-        Called every 5 minutes by APScheduler. Manages SL dynamically:
-        Phase 1: Move SL to breakeven when price moves +1x ATR in favor
-        Phase 2: Trail SL at 1.0x ATR distance after breakeven
+        Called every 5 minutes by APScheduler. 4-phase position management:
+        Phase 1: Move SL to breakeven when price moves +1.0x ATR in favor
+        Phase 2: Partial close 50% at original TP, move SL to mid-profit
+        Phase 3: Set TP2 = TP1 + 1.0x ATR, trail at 1.0x ATR
+        Phase 4: Tighten trail to 0.7x ATR after +3.0x ATR from entry
         """
         if not self.running:
             return
 
         positions = self.adapter.get_open_positions()
         if positions.empty:
+            # Clean up states for closed positions
+            if self._position_states:
+                self._position_states.clear()
+                self._save_monitor_states()
             return
+
+        # Clean up states for positions that no longer exist
+        active_tickets = set(positions["ticket"].tolist())
+        closed = [t for t in self._position_states if t not in active_tickets]
+        for t in closed:
+            del self._position_states[t]
+
+        # Batch-fetch ATR for all unique symbols at once
+        atr_cache = {}
+        for symbol in positions["symbol"].unique():
+            df = self.adapter.get_ohlcv(symbol, "H1", 50)
+            if df.empty:
+                continue
+            df = add_atr(df, 14)
+            atr_vals = df["atr_14"].dropna()
+            if len(atr_vals) > 0:
+                atr_cache[symbol] = float(atr_vals.iloc[-1])
 
         for _, pos in positions.iterrows():
             try:
-                self._manage_position(pos)
+                self._manage_position(pos, atr_cache)
             except Exception as e:
                 logger.debug(f"Monitor error #{pos['ticket']}: {e}")
 
-    def _manage_position(self, pos):
-        """Manage a single open position's SL."""
+        # Persist states to DB after each monitor cycle
+        self._save_monitor_states()
+
+    def _get_digits(self, symbol: str) -> int:
+        """Get decimal digits for rounding prices per symbol."""
+        inst = self.instruments.get(symbol)
+        if inst:
+            return inst.get("digits", 5)
+        return 5
+
+    def _manage_position(self, pos, atr_cache: dict):
+        """Hybrid 4-phase position management."""
         symbol = pos["symbol"]
         inst = self.instruments.get(symbol)
         if not inst:
@@ -1080,22 +1173,28 @@ class TradingEngine:
         entry_price = pos["open_price"]
         current_price = pos["current_price"]
         current_sl = pos.get("sl", 0)
+        current_tp = pos.get("tp", 0)
+        current_volume = pos["volume"]
         action = pos["type"]  # "BUY" or "SELL"
         pip_value = inst["pip_value"]
+        digits = self._get_digits(symbol)
 
-        # Get current ATR for this symbol
-        df = self.adapter.get_ohlcv(symbol, "H1", 50)
-        if df.empty:
+        atr = atr_cache.get(symbol)
+        if not atr or atr <= 0:
             return
-        df = add_atr(df, 14)
-        atr_col = "atr_14"
-        atr_vals = df[atr_col].dropna()
-        if len(atr_vals) == 0:
-            return
-        atr = float(atr_vals.iloc[-1])
 
-        if atr <= 0:
-            return
+        # Initialize position state if new
+        if ticket not in self._position_states:
+            self._position_states[ticket] = {
+                "phase": 0,
+                "tp1_closed": False,
+                "original_volume": current_volume,
+                "original_tp": current_tp,
+                "entry_atr": atr,
+                "symbol": symbol,
+            }
+
+        state = self._position_states[ticket]
 
         # Calculate price movement in ATR units
         if action == "BUY":
@@ -1105,60 +1204,126 @@ class TradingEngine:
 
         atr_units_moved = move_in_favor / atr if atr > 0 else 0
 
-        # Phase 1: Breakeven — move SL to entry when +0.3x ATR in favor
-        if atr_units_moved >= 0.3:
+        # ── Phase 4: Tighten trail after +3.0x ATR ──
+        if atr_units_moved >= 3.0 and state["tp1_closed"]:
+            if state["phase"] < 4:
+                state["phase"] = 4
+                logger.info(f"[MONITOR] #{ticket} {symbol} → Phase 4 (tight trail)")
+            self._apply_trailing(ticket, symbol, action, current_price, current_sl,
+                                 atr, trail_mult=0.7, digits=digits, phase="P4-TIGHT")
+            return
+
+        # ── Phase 3: Trail at 1.0x ATR after partial close ──
+        if state["tp1_closed"]:
+            if state["phase"] < 3:
+                state["phase"] = 3
+                logger.info(f"[MONITOR] #{ticket} {symbol} → Phase 3 (trailing)")
+            self._apply_trailing(ticket, symbol, action, current_price, current_sl,
+                                 atr, trail_mult=1.0, digits=digits, phase="P3-TRAIL")
+            return
+
+        # ── Phase 2: Partial close at original TP ──
+        original_tp = state["original_tp"]
+        if original_tp > 0 and not state["tp1_closed"]:
+            tp_reached = False
+            if action == "BUY" and current_price >= original_tp:
+                tp_reached = True
+            elif action == "SELL" and current_price <= original_tp:
+                tp_reached = True
+
+            if tp_reached:
+                close_volume = round(state["original_volume"] * 0.5, 2)
+                if close_volume >= 0.01:
+                    result = self.adapter.partial_close(ticket, close_volume)
+                    if result.get("success"):
+                        state["tp1_closed"] = True
+                        state["phase"] = 2
+
+                        # Move SL to mid-profit point
+                        if action == "BUY":
+                            mid_sl = entry_price + (current_price - entry_price) * 0.5
+                        else:
+                            mid_sl = entry_price - (entry_price - current_price) * 0.5
+                        mid_sl = round(mid_sl, digits)
+
+                        # Set TP2 = original TP + 1.0x ATR
+                        if action == "BUY":
+                            new_tp = round(original_tp + atr * 1.0, digits)
+                        else:
+                            new_tp = round(original_tp - atr * 1.0, digits)
+
+                        self.adapter.modify_position(ticket, stop_loss=mid_sl, take_profit=new_tp)
+
+                        logger.info(
+                            f"[MONITOR] #{ticket} {symbol} {action} | PARTIAL CLOSE 50% "
+                            f"({close_volume} lots @ {result['price']:.{digits}f}) | "
+                            f"SL → {mid_sl:.{digits}f} | TP2 → {new_tp:.{digits}f}"
+                        )
+                        self.notifier.send(
+                            f"🎯 [MONITOR] #{ticket} {symbol} {action}\n"
+                            f"TP1 HIT — Closed 50% ({close_volume} lots)\n"
+                            f"SL → {mid_sl:.{digits}f} (mid-profit)\n"
+                            f"TP2 → {new_tp:.{digits}f} (+1 ATR)"
+                        )
+                        return
+
+        # ── Phase 1: Breakeven at +1.0x ATR ──
+        if atr_units_moved >= 1.0 and state["phase"] < 1:
             if action == "BUY":
-                # SL should be at least at entry (breakeven)
-                breakeven_sl = entry_price + (pip_value * 2)  # +2 pips above entry for spread
+                be_sl = entry_price + (pip_value * 2)
+            else:
+                be_sl = entry_price - (pip_value * 2)
+            be_sl = round(be_sl, digits)
 
-                # Phase 2: Trailing — trail at 0.5x ATR behind current price
-                trailing_sl = current_price - atr * 0.5
+            should_move = False
+            if action == "BUY" and current_sl < be_sl:
+                should_move = True
+            elif action == "SELL" and (current_sl == 0 or current_sl > be_sl):
+                should_move = True
 
-                # Use whichever is higher (more protective)
-                target_sl = max(breakeven_sl, trailing_sl)
+            if should_move:
+                result = self.adapter.modify_position(ticket, stop_loss=be_sl)
+                if result.get("success"):
+                    state["phase"] = 1
+                    logger.info(
+                        f"[MONITOR] #{ticket} {symbol} {action} | BREAKEVEN "
+                        f"SL → {be_sl:.{digits}f} | Move: {atr_units_moved:.1f}x ATR"
+                    )
+                    self.notifier.send(
+                        f"🔒 [MONITOR] #{ticket} {symbol} {action}\n"
+                        f"BREAKEVEN: SL → {be_sl:.{digits}f}\n"
+                        f"Price moved {atr_units_moved:.1f}x ATR in favor"
+                    )
 
-                # Only move SL up, never down
-                if current_sl < target_sl:
-                    target_sl = round(target_sl, 5)
-                    result = self.adapter.modify_position(ticket, stop_loss=target_sl)
-                    if result.get("success"):
-                        action_type = "TRAILING" if trailing_sl > breakeven_sl else "BREAKEVEN"
-                        logger.info(
-                            f"[MONITOR] #{ticket} {symbol} BUY | {action_type} "
-                            f"SL: {current_sl:.5f} -> {target_sl:.5f} | "
-                            f"Move: {atr_units_moved:.1f}x ATR"
-                        )
-                        self.notifier.send(
-                            f"[MONITOR] #{ticket} {symbol} BUY\n"
-                            f"{action_type}: SL moved to {target_sl:.5f}\n"
-                            f"Price moved {atr_units_moved:.1f}x ATR in favor"
-                        )
-
-            else:  # SELL
-                breakeven_sl = entry_price - (pip_value * 2)  # just below entry
-
-                trailing_sl = current_price + atr * 0.5  # trail above current price
-
-                # For SELL: lower SL = more protective (closer to current price)
-                # Use whichever is lower (tighter to price)
-                target_sl = min(breakeven_sl, trailing_sl)
-
-                # Only move SL DOWN (more protective for SELL), never up
-                if current_sl == 0 or current_sl > target_sl:
-                    target_sl = round(target_sl, 5)
-                    result = self.adapter.modify_position(ticket, stop_loss=target_sl)
-                    if result.get("success"):
-                        action_type = "TRAILING" if trailing_sl < breakeven_sl else "BREAKEVEN"
-                        logger.info(
-                            f"[MONITOR] #{ticket} {symbol} SELL | {action_type} "
-                            f"SL: {current_sl:.5f} -> {target_sl:.5f} | "
-                            f"Move: {atr_units_moved:.1f}x ATR"
-                        )
-                        self.notifier.send(
-                            f"[MONITOR] #{ticket} {symbol} SELL\n"
-                            f"{action_type}: SL moved to {target_sl:.5f}\n"
-                            f"Price moved {atr_units_moved:.1f}x ATR in favor"
-                        )
+    def _apply_trailing(self, ticket, symbol, action, current_price, current_sl,
+                        atr, trail_mult, digits, phase):
+        """Apply trailing stop at trail_mult * ATR distance."""
+        if action == "BUY":
+            trail_sl = round(current_price - atr * trail_mult, digits)
+            if trail_sl > current_sl:
+                result = self.adapter.modify_position(ticket, stop_loss=trail_sl)
+                if result.get("success"):
+                    logger.info(
+                        f"[MONITOR] #{ticket} {symbol} BUY | {phase} "
+                        f"SL: {current_sl:.{digits}f} → {trail_sl:.{digits}f}"
+                    )
+                    self.notifier.send(
+                        f"📈 [MONITOR] #{ticket} {symbol} BUY\n"
+                        f"{phase}: SL → {trail_sl:.{digits}f}"
+                    )
+        else:  # SELL
+            trail_sl = round(current_price + atr * trail_mult, digits)
+            if current_sl == 0 or trail_sl < current_sl:
+                result = self.adapter.modify_position(ticket, stop_loss=trail_sl)
+                if result.get("success"):
+                    logger.info(
+                        f"[MONITOR] #{ticket} {symbol} SELL | {phase} "
+                        f"SL: {current_sl:.{digits}f} → {trail_sl:.{digits}f}"
+                    )
+                    self.notifier.send(
+                        f"📉 [MONITOR] #{ticket} {symbol} SELL\n"
+                        f"{phase}: SL → {trail_sl:.{digits}f}"
+                    )
 
     def _save_scan_details(self, scan_details: list):
         """Save per-symbol scan details to database."""
