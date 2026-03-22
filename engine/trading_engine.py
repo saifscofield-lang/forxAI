@@ -1303,6 +1303,14 @@ class TradingEngine:
     def _apply_trailing(self, ticket, symbol, action, current_price, current_sl,
                         atr, trail_mult, digits, phase):
         """Apply trailing stop at trail_mult * ATR distance."""
+        # Get current TP for reporting
+        positions = self.adapter.get_open_positions()
+        current_tp = 0
+        if not positions.empty:
+            pos_row = positions[positions["ticket"] == ticket]
+            if not pos_row.empty:
+                current_tp = pos_row.iloc[0].get("tp", 0)
+
         if action == "BUY":
             trail_sl = round(current_price - atr * trail_mult, digits)
             if trail_sl > current_sl:
@@ -1314,7 +1322,8 @@ class TradingEngine:
                     )
                     self.notifier.send(
                         f"📈 [MONITOR] #{ticket} {symbol} BUY\n"
-                        f"{phase}: SL → {trail_sl:.{digits}f}"
+                        f"{phase}: SL {current_sl:.{digits}f} → {trail_sl:.{digits}f}\n"
+                        f"Price: {current_price:.{digits}f} | TP: {current_tp:.{digits}f}"
                     )
         else:  # SELL
             trail_sl = round(current_price + atr * trail_mult, digits)
@@ -1327,7 +1336,8 @@ class TradingEngine:
                     )
                     self.notifier.send(
                         f"📉 [MONITOR] #{ticket} {symbol} SELL\n"
-                        f"{phase}: SL → {trail_sl:.{digits}f}"
+                        f"{phase}: SL {current_sl:.{digits}f} → {trail_sl:.{digits}f}\n"
+                        f"Price: {current_price:.{digits}f} | TP: {current_tp:.{digits}f}"
                     )
 
     def _save_scan_details(self, scan_details: list):

@@ -199,8 +199,23 @@ def scan_and_trade():
         else:
             logger.info("No executed signals this scan")
 
-        # Send Telegram report
+        # Send Telegram report with open positions
         open_count = 0 if positions is None or (hasattr(positions, 'empty') and positions.empty) else len(positions)
+
+        # Build open positions summary for Telegram
+        pos_lines = []
+        if not positions.empty:
+            for _, pos in positions.iterrows():
+                pnl_emoji = "+" if pos['profit'] >= 0 else ""
+                pos_lines.append(
+                    f"  {pos['type']} {pos['symbol']} {pos['volume']}lots\n"
+                    f"    PnL: ${pos['profit']:{pnl_emoji},.2f} | Entry: {pos['open_price']}\n"
+                    f"    SL: {pos.get('sl', 0)} | TP: {pos.get('tp', 0)}"
+                )
+
+        pos_text = "\n".join(pos_lines) if pos_lines else "None"
+        positions_msg = f"\n\n<b>OPEN POSITIONS:</b>\n{pos_text}" if pos_lines else ""
+
         engine.notifier.detailed_scan_report(
             scan_number=scan_count,
             account=account,
@@ -209,6 +224,13 @@ def scan_and_trade():
             executed=executed,
             news_events=upcoming_news if upcoming_news else None,
         )
+
+        # Send positions detail separately (detailed_scan_report has char limit)
+        if pos_lines:
+            engine.notifier.send(
+                f"<b>OPEN POSITIONS ({open_count})</b>\n" +
+                "\n".join(pos_lines)
+            )
 
         logger.info(f"Scan #{scan_count} complete")
 
