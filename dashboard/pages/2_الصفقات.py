@@ -150,8 +150,10 @@ if positions_df is not None and not positions_df.empty:
                 st.error(f"فشل الإغلاق: {msg}")
 
 else:
-    # Fall back to DB open trades
+    # Fall back to DB open trades with live PnL from last scan
     from dashboard.utils.db import get_open_trades
+    import sqlite3
+
     db_trades = get_open_trades()
 
     if db_trades.empty:
@@ -163,25 +165,35 @@ else:
         """, unsafe_allow_html=True)
     else:
         st.subheader(f"صفقات من قاعدة البيانات ({len(db_trades)})")
-        st.caption("بيانات MT5 الحية غير متاحة — عرض السجلات المحفوظة")
+
+        # Try to get last known PnL from account snapshot
+        try:
+            conn = sqlite3.connect("data/trading.db")
+            snap = pd.read_sql_query(
+                "SELECT balance, equity, profit FROM account_snapshots ORDER BY id DESC LIMIT 1",
+                conn
+            )
+            conn.close()
+            if not snap.empty:
+                total_open_pnl = snap.iloc[0].get("profit", 0) or 0
+                st.caption(f"آخر تحديث من المحرك — الربح المفتوح الإجمالي: ${total_open_pnl:+,.2f}")
+            else:
+                st.caption("بيانات MT5 الحية غير متاحة — عرض السجلات المحفوظة")
+        except Exception:
+            st.caption("بيانات MT5 الحية غير متاحة — عرض السجلات المحفوظة")
+
+        # Drop the zero profit column and show useful info
+        display_cols = [c for c in db_trades.columns if c != "profit"]
+        display_df = db_trades[display_cols] if display_cols else db_trades
 
         fmt = {}
         for col in ["open_price", "stop_loss", "take_profit"]:
-            if col in db_trades.columns:
+            if col in display_df.columns:
                 fmt[col] = "{:.5f}"
-        if "profit" in db_trades.columns:
-            fmt["profit"] = "${:+,.2f}"
+        if "volume" in display_df.columns:
+            fmt["volume"] = "{:.2f}"
 
-        def color_pnl(val):
-            if isinstance(val, (int, float)):
-                return "color: #00C851" if val >= 0 else "color: #FF4444"
-            return ""
-
-        styled = db_trades.style.format(fmt)
-        if "profit" in db_trades.columns:
-            styled = styled.map(color_pnl, subset=["profit"])
-
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(display_df.style.format(fmt), use_container_width=True, hide_index=True)
 
 # ── Position Size Calculator ──────────────────────────────────────────────────
 st.divider()
