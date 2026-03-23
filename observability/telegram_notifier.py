@@ -25,6 +25,8 @@ class TelegramNotifier:
             return False
 
         try:
+            # Add ForexAI tag to every message
+            message = f"[ForexAI] {message}"
             url = f"https://api.telegram.org/bot{self.token}/sendMessage"
             data = urllib.parse.urlencode({
                 "chat_id": self.chat_id,
