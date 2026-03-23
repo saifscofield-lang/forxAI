@@ -392,6 +392,13 @@ def main():
         return
     else:
         logger.info("  Health check: ALL PASS")
+        _notifier.send(
+            "<b>HEALTH CHECK: ALL PASS</b>\n"
+            f"MT5: Connected\n"
+            f"Database: OK\n"
+            f"Config: OK\n"
+            "Starting bot..."
+        )
 
     # -- Initialize database --
     init_db()
