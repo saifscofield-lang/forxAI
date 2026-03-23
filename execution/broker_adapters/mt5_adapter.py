@@ -79,7 +79,9 @@ class MT5Adapter:
         password = password or os.getenv("MT5_PASSWORD", "")
         server   = server   or os.getenv("MT5_SERVER", "")
 
-        if not mt5.initialize():
+        mt5_path = os.getenv("MT5_PATH", "")
+        init_kwargs = {"path": mt5_path} if mt5_path else {}
+        if not mt5.initialize(**init_kwargs):
             logger.error(f"فشل تهيئة MT5: {mt5.last_error()}")
             return False
 
