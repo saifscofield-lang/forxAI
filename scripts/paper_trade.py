@@ -332,6 +332,67 @@ def main():
     print("=" * 60)
     print()
 
+    # -- Pre-start health check --
+    logger.info("Running pre-start health check...")
+    from observability.telegram_notifier import TelegramNotifier
+    _notifier = TelegramNotifier()
+    errors = []
+
+    # Check .env
+    if not os.getenv("MT5_LOGIN"):
+        errors.append("MT5_LOGIN missing in .env")
+    if not os.getenv("MT5_PASSWORD"):
+        errors.append("MT5_PASSWORD missing in .env")
+
+    # Check MT5 connection
+    try:
+        import MetaTrader5 as mt5
+        if not mt5.initialize():
+            mt5_path = os.getenv("MT5_PATH", "")
+            if mt5_path and not mt5.initialize(path=mt5_path):
+                errors.append(f"MT5 not running: {mt5.last_error()}")
+            elif not mt5_path:
+                errors.append(f"MT5 not running: {mt5.last_error()}")
+        if not errors:
+            info = mt5.account_info()
+            if info:
+                logger.info(f"  MT5: OK (Account {info.login}, ${info.balance:,.2f})")
+            else:
+                errors.append("MT5 connected but no account info")
+            mt5.shutdown()
+    except Exception as e:
+        errors.append(f"MT5 error: {e}")
+
+    # Check database
+    try:
+        import sqlite3
+        if os.path.exists("data/trading.db"):
+            conn = sqlite3.connect("data/trading.db")
+            count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
+            logger.info(f"  Database: OK ({count} trades)")
+            conn.close()
+        else:
+            errors.append("Database file not found")
+    except Exception as e:
+        errors.append(f"Database error: {e}")
+
+    # Check config
+    try:
+        with open("config/base.yaml", "r", encoding="utf-8") as f:
+            _test_cfg = yaml.safe_load(f)
+        logger.info(f"  Config: OK ({len(_test_cfg.get('instruments', []))} instruments)")
+    except Exception as e:
+        errors.append(f"Config error: {e}")
+
+    if errors:
+        error_msg = "\n".join(f"- {e}" for e in errors)
+        logger.error(f"Health check FAILED:\n{error_msg}")
+        _notifier.send(f"<b>STARTUP FAILED</b>\n{error_msg}")
+        print(f"\n  HEALTH CHECK FAILED - {len(errors)} errors. Fix and retry.\n")
+        return
+    else:
+        logger.info("  Health check: ALL PASS")
+
     # -- Initialize database --
     init_db()
 
@@ -365,6 +426,7 @@ def main():
 
     if not engine.start():
         logger.error("Failed to start engine. Is MT5 running?")
+        _notifier.send("<b>STARTUP FAILED</b>\nEngine could not connect to MT5.")
         return
 
     account = engine.adapter.get_account_info()
