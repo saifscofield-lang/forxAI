@@ -182,18 +182,25 @@ else:
         except Exception:
             st.caption("بيانات MT5 الحية غير متاحة — عرض السجلات المحفوظة")
 
-        # Drop the zero profit column and show useful info
-        display_cols = [c for c in db_trades.columns if c != "profit"]
-        display_df = db_trades[display_cols] if display_cols else db_trades
-
         fmt = {}
         for col in ["open_price", "stop_loss", "take_profit"]:
-            if col in display_df.columns:
+            if col in db_trades.columns:
                 fmt[col] = "{:.5f}"
-        if "volume" in display_df.columns:
+        if "volume" in db_trades.columns:
             fmt["volume"] = "{:.2f}"
+        if "profit" in db_trades.columns:
+            fmt["profit"] = "${:+,.2f}"
 
-        st.dataframe(display_df.style.format(fmt), use_container_width=True, hide_index=True)
+        def color_pnl(val):
+            if isinstance(val, (int, float)):
+                return "color: #00C851" if val >= 0 else "color: #FF4444"
+            return ""
+
+        styled = db_trades.style.format(fmt)
+        if "profit" in db_trades.columns:
+            styled = styled.map(color_pnl, subset=["profit"])
+
+        st.dataframe(styled, use_container_width=True, hide_index=True)
 
 # ── Position Size Calculator ──────────────────────────────────────────────────
 st.divider()

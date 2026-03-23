@@ -150,7 +150,7 @@ def scan_and_trade():
             f"P&L: ${account['profit']:+,.2f}"
         )
 
-        # Check open positions
+        # Check open positions and update live PnL in DB
         positions = engine.adapter.get_open_positions()
         if not positions.empty:
             logger.info(f"Open positions: {len(positions)}")
@@ -159,6 +159,20 @@ def scan_and_trade():
                     f"  #{pos['ticket']} {pos['type']} {pos['symbol']} "
                     f"{pos['volume']} lots | P&L: ${pos['profit']:+,.2f}"
                 )
+
+            # Update live PnL in DB so dashboard can show it
+            try:
+                import sqlite3
+                conn = sqlite3.connect("data/trading.db")
+                for _, pos in positions.iterrows():
+                    conn.execute(
+                        "UPDATE trades SET profit=? WHERE ticket=? AND is_closed=0",
+                        (pos['profit'], pos['ticket'])
+                    )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
 
         # Show news status
         blocked_symbols = []
