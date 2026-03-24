@@ -567,14 +567,33 @@ class TradingEngine:
             if not corr_ok:
                 return False, corr_reason
 
-        # H4 trend filter: only trade with the trend (IMP-10)
+        # H4 trend filter: strategy-aware (IMP-10 v2)
+        # - RSI Reversal: no H4 filter (designed for counter-trend)
+        # - MACD Crossover: block only strong trends (allow RANGE)
+        # - Bollinger Bounce: always filter (worst counter-trend performer)
         h4_trend = signal.get("h4_trend")
+        strategy_name = signal.get("strategy", "")
+
         if h4_trend and h4_trend != "RANGE":
             action = signal["action"]
-            if h4_trend == "UP" and action == "SELL":
-                return False, f"H4 trend is UP, blocking SELL on {symbol}"
-            if h4_trend == "DOWN" and action == "BUY":
-                return False, f"H4 trend is DOWN, blocking BUY on {symbol}"
+            is_counter_trend = (
+                (h4_trend == "UP" and action == "SELL") or
+                (h4_trend == "DOWN" and action == "BUY")
+            )
+
+            if is_counter_trend:
+                # RSI Reversal: allow counter-trend (it's designed for reversals)
+                if strategy_name == "rsi_reversal":
+                    pass  # allow through
+                # MACD: block counter-trend
+                elif strategy_name == "macd_crossover":
+                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [MACD]"
+                # Bollinger Bounce: always block counter-trend
+                elif strategy_name == "bollinger_bounce":
+                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [BB]"
+                # Unknown strategy: block by default
+                else:
+                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol}"
 
         # IMP-15: Session filter — block low-liquidity hours
         session_ok, session_reason = self._check_session(symbol)
