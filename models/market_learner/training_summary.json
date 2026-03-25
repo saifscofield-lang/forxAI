@@ -1,0 +1,177 @@
+{
+  "EURUSD": {
+    "SELL": {
+      "precision": 0.403,
+      "recall": 0.293,
+      "count_true": 3349,
+      "count_pred": 2432
+    },
+    "NO_TRADE": {
+      "precision": 0.672,
+      "recall": 0.807,
+      "count_true": 5587,
+      "count_pred": 6712
+    },
+    "BUY": {
+      "precision": 0.421,
+      "recall": 0.395,
+      "count_true": 3458,
+      "count_pred": 3250
+    },
+    "trade_signals": 5682,
+    "trade_accuracy": 0.413,
+    "high_conf_signals": 145,
+    "high_conf_accuracy": 0.483,
+    "overall_accuracy": 0.553
+  },
+  "GBPUSD": {
+    "SELL": {
+      "precision": 0.368,
+      "recall": 0.353,
+      "count_true": 3336,
+      "count_pred": 3207
+    },
+    "NO_TRADE": {
+      "precision": 0.677,
+      "recall": 0.757,
+      "count_true": 5685,
+      "count_pred": 6357
+    },
+    "BUY": {
+      "precision": 0.401,
+      "recall": 0.337,
+      "count_true": 3373,
+      "count_pred": 2830
+    },
+    "trade_signals": 6037,
+    "trade_accuracy": 0.383,
+    "high_conf_signals": 6,
+    "high_conf_accuracy": 0.0,
+    "overall_accuracy": 0.534
+  },
+  "USDJPY": {
+    "SELL": {
+      "precision": 0.457,
+      "recall": 0.647,
+      "count_true": 5065,
+      "count_pred": 7171
+    },
+    "NO_TRADE": {
+      "precision": 0.458,
+      "recall": 0.6,
+      "count_true": 2374,
+      "count_pred": 3110
+    },
+    "BUY": {
+      "precision": 0.477,
+      "recall": 0.203,
+      "count_true": 4956,
+      "count_pred": 2114
+    },
+    "trade_signals": 9285,
+    "trade_accuracy": 0.462,
+    "high_conf_signals": 74,
+    "high_conf_accuracy": 0.5,
+    "overall_accuracy": 0.461
+  },
+  "XAUUSD": {
+    "SELL": {
+      "precision": 0.429,
+      "recall": 0.767,
+      "count_true": 4632,
+      "count_pred": 8274
+    },
+    "NO_TRADE": {
+      "precision": 0.457,
+      "recall": 0.559,
+      "count_true": 1865,
+      "count_pred": 2282
+    },
+    "BUY": {
+      "precision": 0.463,
+      "recall": 0.109,
+      "count_true": 5311,
+      "count_pred": 1252
+    },
+    "trade_signals": 9526,
+    "trade_accuracy": 0.434,
+    "high_conf_signals": 690,
+    "high_conf_accuracy": 0.506,
+    "overall_accuracy": 0.438
+  },
+  "AUDUSD": {
+    "SELL": {
+      "precision": 0.364,
+      "recall": 0.052,
+      "count_true": 2740,
+      "count_pred": 393
+    },
+    "NO_TRADE": {
+      "precision": 0.631,
+      "recall": 0.931,
+      "count_true": 7070,
+      "count_pred": 10427
+    },
+    "BUY": {
+      "precision": 0.429,
+      "recall": 0.261,
+      "count_true": 2584,
+      "count_pred": 1574
+    },
+    "trade_signals": 1967,
+    "trade_accuracy": 0.416,
+    "high_conf_signals": 86,
+    "high_conf_accuracy": 0.57,
+    "overall_accuracy": 0.597
+  },
+  "USDCAD": {
+    "SELL": {
+      "precision": 0.396,
+      "recall": 0.447,
+      "count_true": 3179,
+      "count_pred": 3595
+    },
+    "NO_TRADE": {
+      "precision": 0.697,
+      "recall": 0.779,
+      "count_true": 5914,
+      "count_pred": 6613
+    },
+    "BUY": {
+      "precision": 0.359,
+      "recall": 0.238,
+      "count_true": 3301,
+      "count_pred": 2186
+    },
+    "trade_signals": 5781,
+    "trade_accuracy": 0.382,
+    "high_conf_signals": 377,
+    "high_conf_accuracy": 0.496,
+    "overall_accuracy": 0.55
+  },
+  "USDCHF": {
+    "SELL": {
+      "precision": 0.388,
+      "recall": 0.216,
+      "count_true": 3207,
+      "count_pred": 1788
+    },
+    "NO_TRADE": {
+      "precision": 0.68,
+      "recall": 0.788,
+      "count_true": 6608,
+      "count_pred": 7664
+    },
+    "BUY": {
+      "precision": 0.316,
+      "recall": 0.361,
+      "count_true": 2579,
+      "count_pred": 2942
+    },
+    "trade_signals": 4730,
+    "trade_accuracy": 0.344,
+    "high_conf_signals": 62,
+    "high_conf_accuracy": 0.339,
+    "overall_accuracy": 0.551
+  }
+}

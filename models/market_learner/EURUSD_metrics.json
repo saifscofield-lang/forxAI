@@ -1,0 +1,194 @@
+{
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "forward_hours": 6,
+  "min_move": 0.002,
+  "feature_cols": [
+    "return_1",
+    "return_2",
+    "return_3",
+    "return_5",
+    "return_10",
+    "return_20",
+    "sma_10",
+    "close_vs_sma_10",
+    "sma_20",
+    "close_vs_sma_20",
+    "sma_50",
+    "close_vs_sma_50",
+    "sma_100",
+    "close_vs_sma_100",
+    "sma_200",
+    "close_vs_sma_200",
+    "ema_12",
+    "ema_26",
+    "ema_50",
+    "sma_10_50_diff",
+    "sma_20_100_diff",
+    "sma_50_200_diff",
+    "ema_12_26_diff",
+    "rsi_7",
+    "rsi_14",
+    "rsi_21",
+    "macd_line",
+    "macd_signal",
+    "macd_hist",
+    "roc_5",
+    "roc_10",
+    "roc_20",
+    "atr_7",
+    "atr_7_pct",
+    "atr_14",
+    "atr_14_pct",
+    "atr_28",
+    "atr_28_pct",
+    "bb_width",
+    "bb_position",
+    "volatility_10",
+    "volatility_20",
+    "candle_body_ratio",
+    "candle_direction",
+    "upper_shadow_ratio",
+    "lower_shadow_ratio",
+    "consecutive_direction",
+    "price_position_10",
+    "price_position_20",
+    "price_position_50",
+    "dist_from_high_20",
+    "dist_from_low_20",
+    "volume_ratio",
+    "volume_change",
+    "hour",
+    "day_of_week",
+    "session_london",
+    "session_ny",
+    "session_asia",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "rsi_14_lag1",
+    "macd_hist_lag1",
+    "return_1_lag1",
+    "rsi_14_lag2",
+    "macd_hist_lag2",
+    "return_1_lag2",
+    "rsi_14_lag3",
+    "macd_hist_lag3",
+    "return_1_lag3",
+    "rsi_14_change",
+    "macd_hist_change"
+  ],
+  "train_samples": 74924,
+  "val_samples": 12435,
+  "test_samples": 12394,
+  "metrics": {
+    "SELL": {
+      "precision": 0.403,
+      "recall": 0.293,
+      "count_true": 3349,
+      "count_pred": 2432
+    },
+    "NO_TRADE": {
+      "precision": 0.672,
+      "recall": 0.807,
+      "count_true": 5587,
+      "count_pred": 6712
+    },
+    "BUY": {
+      "precision": 0.421,
+      "recall": 0.395,
+      "count_true": 3458,
+      "count_pred": 3250
+    },
+    "trade_signals": 5682,
+    "trade_accuracy": 0.413,
+    "high_conf_signals": 145,
+    "high_conf_accuracy": 0.483,
+    "overall_accuracy": 0.553
+  },
+  "top_features": [
+    [
+      "atr_28",
+      115749.3620402813
+    ],
+    [
+      "hour_cos",
+      61381.69385457039
+    ],
+    [
+      "hour",
+      47541.61333823204
+    ],
+    [
+      "hour_sin",
+      26935.741334199905
+    ],
+    [
+      "atr_28_pct",
+      23288.369094610214
+    ],
+    [
+      "session_london",
+      19484.90681886673
+    ],
+    [
+      "atr_14",
+      10254.005466461182
+    ],
+    [
+      "day_of_week",
+      9778.500075340271
+    ],
+    [
+      "sma_50_200_diff",
+      8634.641135692596
+    ],
+    [
+      "volume_ratio",
+      8296.943738013506
+    ],
+    [
+      "sma_200",
+      7064.636720895767
+    ],
+    [
+      "close_vs_sma_200",
+      6197.4890666008
+    ],
+    [
+      "sma_20_100_diff",
+      6161.457844316959
+    ],
+    [
+      "sma_100",
+      6152.159351348877
+    ],
+    [
+      "atr_14_pct",
+      5408.393655061722
+    ],
+    [
+      "volatility_20",
+      5076.008494853973
+    ],
+    [
+      "atr_7",
+      4851.19736123085
+    ],
+    [
+      "sma_50",
+      4609.813611268997
+    ],
+    [
+      "volatility_10",
+      4053.7340836524963
+    ],
+    [
+      "close_vs_sma_100",
+      3971.5019764900208
+    ]
+  ],
+  "trained_at": "2026-03-26T01:11:55.674326",
+  "best_iteration": 90
+}

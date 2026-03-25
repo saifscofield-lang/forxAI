@@ -29,6 +29,7 @@ from strategies.sma_crossover import SMACrossoverStrategy
 from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.bollinger_bounce import BollingerBounceStrategy
+from strategies.ml_direct_strategy import MLDirectStrategy
 from storage.database import init_db
 from news.news_filter import NewsFilter
 
@@ -96,10 +97,23 @@ def create_strategies(config):
         #     atr_tp_multiplier=tp_mult,
         # ))
 
-        if symbol in ("XAUUSD", "USDCAD"):
-            logger.info(f"  {symbol}: 1 strategy (MACD only) - RSI excluded (IMP-51/52)")
+        # 5. ML Direct Strategy — market-driven signal generation
+        ml_strat = MLDirectStrategy(
+            symbol=symbol,
+            confidence_threshold=0.55,
+            atr_sl_multiplier=sl_mult,
+            atr_tp_multiplier=tp_mult,
+        )
+        if ml_strat.model is not None:
+            strategies.append(ml_strat)
+            ml_loaded = True
         else:
-            logger.info(f"  {symbol}: 2 strategies (RSI, MACD) - SMA disabled (IMP-03), BB disabled (IMP-49)")
+            ml_loaded = False
+
+        if symbol in ("XAUUSD", "USDCAD"):
+            logger.info(f"  {symbol}: {'2' if ml_loaded else '1'} strategies (MACD{', ML Direct' if ml_loaded else ''}) - RSI excluded (IMP-51/52)")
+        else:
+            logger.info(f"  {symbol}: {'3' if ml_loaded else '2'} strategies (RSI, MACD{', ML Direct' if ml_loaded else ''}) - SMA disabled (IMP-03), BB disabled (IMP-49)")
 
     return strategies
 
