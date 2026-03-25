@@ -24,7 +24,10 @@ GDRIVE_PATH = Path(os.getenv("GDRIVE_SYNC_PATH", "G:/My Drive/forexAI_data"))
 # Files to sync
 FILES_TO_SYNC = [
     PROJECT_ROOT / "data" / "trading.db",
+    PROJECT_ROOT / "data" / "improvements.db",
     PROJECT_ROOT / "data" / "optimized_params.yaml",
+    PROJECT_ROOT / "data" / "validated_params.yaml",
+    PROJECT_ROOT / "config" / "base.yaml",
 ]
 
 # Directories to sync
@@ -33,6 +36,7 @@ DIRS_TO_SYNC = [
     PROJECT_ROOT / "data" / "raw",
     PROJECT_ROOT / "data" / "logs",
     PROJECT_ROOT / "data" / "ml_training",
+    PROJECT_ROOT / "data" / "reports",
 ]
 
 
