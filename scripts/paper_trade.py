@@ -71,15 +71,16 @@ def create_strategies(config):
         sl_mult = float(params.get("atr_sl_mult", 2.0))
         tp_mult = float(params.get("atr_tp_mult", 3.0))
 
-        # 2. RSI Reversal
-        strategies.append(RSIReversalStrategy(
-            symbol=symbol,
-            rsi_period=14,
-            oversold=30.0,
-            overbought=70.0,
-            atr_sl_multiplier=sl_mult,
-            atr_tp_multiplier=tp_mult,
-        ))
+        # 2. RSI Reversal — IMP-51: exclude XAUUSD (0% WR), IMP-52: exclude USDCAD (33% WR)
+        if symbol not in ("XAUUSD", "USDCAD"):
+            strategies.append(RSIReversalStrategy(
+                symbol=symbol,
+                rsi_period=14,
+                oversold=30.0,
+                overbought=70.0,
+                atr_sl_multiplier=sl_mult,
+                atr_tp_multiplier=tp_mult,
+            ))
 
         # 3. MACD Crossover (slightly wider than base)
         strategies.append(MACDCrossoverStrategy(
@@ -88,16 +89,17 @@ def create_strategies(config):
             atr_tp_multiplier=tp_mult * 1.15,
         ))
 
-        # 4. Bollinger Bounce (IMP-16: range filter built in)
-        strategies.append(BollingerBounceStrategy(
-            symbol=symbol,
-            atr_sl_multiplier=sl_mult,
-            atr_tp_multiplier=tp_mult,
-        ))
+        # 4. Bollinger Bounce — DISABLED (IMP-49): 41% WR, -$3,126, avg RR -0.11
+        # strategies.append(BollingerBounceStrategy(
+        #     symbol=symbol,
+        #     atr_sl_multiplier=sl_mult,
+        #     atr_tp_multiplier=tp_mult,
+        # ))
 
-        logger.info(
-            f"  {symbol}: 3 strategies (RSI, MACD, BB) - SMA disabled (IMP-03)"
-        )
+        if symbol in ("XAUUSD", "USDCAD"):
+            logger.info(f"  {symbol}: 1 strategy (MACD only) - RSI excluded (IMP-51/52)")
+        else:
+            logger.info(f"  {symbol}: 2 strategies (RSI, MACD) - SMA disabled (IMP-03), BB disabled (IMP-49)")
 
     return strategies
 
@@ -142,6 +144,14 @@ def scan_and_trade():
                 logger.error("Reconnect failed, skipping scan")
                 engine.notifier.send("<b>ERROR:</b> MT5 disconnected, reconnect failed!")
                 return
+
+        # IMP-53: Check if AutoTrading is enabled
+        import MetaTrader5 as mt5
+        term_info = mt5.terminal_info()
+        if term_info and not term_info.trade_allowed:
+            msg = "[ForexAI] ⚠️ AutoTrading is DISABLED in MT5! Enable it to allow order execution."
+            logger.warning(msg)
+            engine.notifier.send(f"<b>WARNING:</b> {msg}")
 
         # Show account status
         logger.info(
@@ -327,7 +337,7 @@ def main():
     print()
     print("=" * 60)
     print("     ForexAI Paper Trading - CLEAN DATA COLLECTION")
-    print("     Strategies: SMA + RSI + MACD + Bollinger (x8 symbols)")
+    print("     Strategies: RSI + MACD (x7 symbols)")
     print(f"     Mode: {'Single scan' if args.once else 'Continuous (H1 candle)'}")
     print("=" * 60)
     print()

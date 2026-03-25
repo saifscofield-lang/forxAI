@@ -27,9 +27,7 @@ instruments:
   - symbol: "USDCAD"
     digits: 5
     pip_value: 0.0001
-  - symbol: "NZDUSD"
-    digits: 5
-    pip_value: 0.0001
+  # NZDUSD removed (IMP-48): 29% WR, -$3,336 loss across all strategies
   - symbol: "USDCHF"
     digits: 5
     pip_value: 0.0001

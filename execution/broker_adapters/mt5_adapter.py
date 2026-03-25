@@ -262,6 +262,24 @@ class MT5Adapter:
         }
 
         result = mt5.order_send(request)
+
+        # IMP-50: Filling mode fallback — try all modes if first fails
+        if result.retcode != mt5.TRADE_RETCODE_DONE and "filling" in (result.comment or "").lower():
+            filling_modes = [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+            original_filling = request["type_filling"]
+            for mode in filling_modes:
+                if mode == original_filling:
+                    continue
+                request["type_filling"] = mode
+                # Re-fetch price in case it changed
+                tick = mt5.symbol_info_tick(symbol)
+                if tick:
+                    request["price"] = tick.ask if order_type == "BUY" else tick.bid
+                result = mt5.order_send(request)
+                if result.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"IMP-50: Filling fallback succeeded with mode {mode} for {symbol}")
+                    break
+
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             logger.error(f"فشل الأمر: {result.comment} (كود: {result.retcode})")
             return {"success": False, "error": result.comment}
