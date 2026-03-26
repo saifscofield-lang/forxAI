@@ -61,6 +61,31 @@ def main():
                 results.append(check("Data fetch (EURUSD H1)", rates is not None and len(rates) > 0,
                                      f"{len(rates)} bars" if rates is not None else "FAILED"))
 
+                # IMP-61: Check AutoTrading status
+                term_info = mt5.terminal_info()
+                if term_info:
+                    results.append(check("AutoTrading enabled", term_info.trade_allowed,
+                                         "ENABLED" if term_info.trade_allowed else "DISABLED! Press Ctrl+E in MT5 or click AutoTrading button"))
+                else:
+                    results.append(check("AutoTrading enabled", False, "Cannot read terminal info"))
+
+                # IMP-61: Check filling mode support for all active symbols
+                import yaml
+                with open("config/base.yaml", "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+                active_symbols = [i["symbol"] for i in config.get("instruments", [])]
+                filling_issues = []
+                for sym in active_symbols:
+                    sym_info = mt5.symbol_info(sym)
+                    if sym_info is None:
+                        filling_issues.append(f"{sym}: not found")
+                    elif sym_info.filling_mode == 0:
+                        filling_issues.append(f"{sym}: no filling mode supported")
+                if filling_issues:
+                    results.append(check("Filling mode support", False, "; ".join(filling_issues)))
+                else:
+                    results.append(check("Filling mode support", True, f"All {len(active_symbols)} symbols OK"))
+
                 # Check open positions
                 positions = mt5.positions_get()
                 pos_count = len(positions) if positions else 0

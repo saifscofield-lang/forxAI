@@ -159,13 +159,14 @@ def scan_and_trade():
                 engine.notifier.send("<b>ERROR:</b> MT5 disconnected, reconnect failed!")
                 return
 
-        # IMP-53: Check if AutoTrading is enabled
+        # IMP-53 + IMP-61: Check if AutoTrading is enabled — skip cycle if disabled
         import MetaTrader5 as mt5
         term_info = mt5.terminal_info()
         if term_info and not term_info.trade_allowed:
-            msg = "[ForexAI] ⚠️ AutoTrading is DISABLED in MT5! Enable it to allow order execution."
+            msg = "[ForexAI] AutoTrading DISABLED! Press Ctrl+E in MT5. Skipping this cycle."
             logger.warning(msg)
             engine.notifier.send(f"<b>WARNING:</b> {msg}")
+            return
 
         # Show account status
         logger.info(
