@@ -567,10 +567,11 @@ class TradingEngine:
             if not corr_ok:
                 return False, corr_reason
 
-        # H4 trend filter: strategy-aware (IMP-10 v2)
-        # - RSI Reversal: no H4 filter (designed for counter-trend)
-        # - MACD Crossover: block only strong trends (allow RANGE)
-        # - Bollinger Bounce: always filter (worst counter-trend performer)
+        # H4 trend filter: strategy-aware (IMP-10 v3)
+        # - RSI Reversal: no filter (designed for counter-trend)
+        # - ML Direct: no filter (model learned from data, has confidence threshold)
+        # - MACD Crossover: block counter-trend
+        # - Bollinger Bounce: block counter-trend
         h4_trend = signal.get("h4_trend")
         strategy_name = signal.get("strategy", "")
 
@@ -582,16 +583,19 @@ class TradingEngine:
             )
 
             if is_counter_trend:
-                # RSI Reversal: allow counter-trend (it's designed for reversals)
+                # RSI Reversal: allow (designed for reversals)
                 if strategy_name == "rsi_reversal":
-                    pass  # allow through
+                    pass
+                # ML Direct: allow (model has its own confidence filter)
+                elif strategy_name == "ml_direct":
+                    pass
                 # MACD: block counter-trend
                 elif strategy_name == "macd_crossover":
                     return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [MACD]"
-                # Bollinger Bounce: always block counter-trend
+                # Bollinger Bounce: block counter-trend
                 elif strategy_name == "bollinger_bounce":
                     return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [BB]"
-                # Unknown strategy: block by default
+                # Unknown: block by default
                 else:
                     return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol}"
 
