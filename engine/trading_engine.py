@@ -567,37 +567,19 @@ class TradingEngine:
             if not corr_ok:
                 return False, corr_reason
 
-        # H4 trend filter: strategy-aware (IMP-10 v3)
-        # - RSI Reversal: no filter (designed for counter-trend)
-        # - ML Direct: no filter (model learned from data, has confidence threshold)
-        # - MACD Crossover: block counter-trend
-        # - Bollinger Bounce: block counter-trend
+        # H4 trend filter: DISABLED (was blocking too many valid signals)
+        # All strategies now allowed regardless of H4 trend direction.
+        # H4 trend info still logged for ML training data collection.
         h4_trend = signal.get("h4_trend")
         strategy_name = signal.get("strategy", "")
-
         if h4_trend and h4_trend != "RANGE":
             action = signal["action"]
             is_counter_trend = (
                 (h4_trend == "UP" and action == "SELL") or
                 (h4_trend == "DOWN" and action == "BUY")
             )
-
             if is_counter_trend:
-                # RSI Reversal: allow (designed for reversals)
-                if strategy_name == "rsi_reversal":
-                    pass
-                # ML Direct: allow (model has its own confidence filter)
-                elif strategy_name == "ml_direct":
-                    pass
-                # MACD: block counter-trend
-                elif strategy_name == "macd_crossover":
-                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [MACD]"
-                # Bollinger Bounce: block counter-trend
-                elif strategy_name == "bollinger_bounce":
-                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol} [BB]"
-                # Unknown: block by default
-                else:
-                    return False, f"H4 trend is {h4_trend}, blocking {action} on {symbol}"
+                logger.info(f"H4 trend is {h4_trend}, {action} on {symbol} [{strategy_name}] — allowed (filter disabled)")
 
         # IMP-15: Session filter — block low-liquidity hours
         session_ok, session_reason = self._check_session(symbol)
