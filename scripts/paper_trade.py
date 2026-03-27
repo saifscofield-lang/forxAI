@@ -156,7 +156,7 @@ def scan_and_trade():
             logger.error("MT5 disconnected, attempting reconnect...")
             if not engine.adapter.connect():
                 logger.error("Reconnect failed, skipping scan")
-                engine.notifier.send("<b>ERROR:</b> MT5 disconnected, reconnect failed!")
+                engine.notifier.send("🔌 <b>خطأ:</b> انقطع الاتصال بـ MT5 وفشلت إعادة الاتصال!")
                 return
 
         # IMP-53 + IMP-61: Check if AutoTrading is enabled — skip cycle if disabled
@@ -165,7 +165,7 @@ def scan_and_trade():
         if term_info and not term_info.trade_allowed:
             msg = "[ForexAI] AutoTrading DISABLED! Press Ctrl+E in MT5. Skipping this cycle."
             logger.warning(msg)
-            engine.notifier.send(f"<b>WARNING:</b> {msg}")
+            engine.notifier.send(f"⚠️ <b>تحذير:</b> التداول التلقائي معطل! اضغط Ctrl+E في MT5.")
             return
 
         # Show account status
@@ -245,15 +245,15 @@ def scan_and_trade():
         pos_lines = []
         if not positions.empty:
             for _, pos in positions.iterrows():
-                pnl_emoji = "+" if pos['profit'] >= 0 else ""
+                pnl_icon = "🟢" if pos['profit'] >= 0 else "🔴"
                 pos_lines.append(
-                    f"  {pos['type']} {pos['symbol']} {pos['volume']}lots\n"
-                    f"    PnL: ${pos['profit']:{pnl_emoji},.2f} | Entry: {pos['open_price']}\n"
-                    f"    SL: {pos.get('sl', 0)} | TP: {pos.get('tp', 0)}"
+                    f"  {pnl_icon} {pos['type']} <b>{pos['symbol']}</b> | {pos['volume']} لوت\n"
+                    f"     💵 ${pos['profit']:+,.2f} | دخول: {pos['open_price']}\n"
+                    f"     🛑 SL: {pos.get('sl', 0)} | 🎯 TP: {pos.get('tp', 0)}"
                 )
 
-        pos_text = "\n".join(pos_lines) if pos_lines else "None"
-        positions_msg = f"\n\n<b>OPEN POSITIONS:</b>\n{pos_text}" if pos_lines else ""
+        pos_text = "\n".join(pos_lines) if pos_lines else "لا يوجد"
+        positions_msg = f"\n\n📂 <b>الصفقات المفتوحة:</b>\n{pos_text}" if pos_lines else ""
 
         engine.notifier.detailed_scan_report(
             scan_number=scan_count,
@@ -267,7 +267,8 @@ def scan_and_trade():
         # Send positions detail separately (detailed_scan_report has char limit)
         if pos_lines:
             engine.notifier.send(
-                f"<b>OPEN POSITIONS ({open_count})</b>\n" +
+                f"📂 <b>الصفقات المفتوحة ({open_count})</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n" +
                 "\n".join(pos_lines)
             )
 
@@ -297,7 +298,7 @@ def scan_and_trade():
         logger.error(f"Scan error: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        engine.notifier.send(f"<b>SCAN ERROR:</b>\n{e}")
+        engine.notifier.send(f"❌ <b>خطأ في المسح:</b>\n<code>{e}</code>")
 
 
 def monitor_positions():
@@ -372,12 +373,12 @@ def main():
     # Check MT5 connection
     try:
         import MetaTrader5 as mt5
-        if not mt5.initialize():
-            mt5_path = os.getenv("MT5_PATH", "")
-            if mt5_path and not mt5.initialize(path=mt5_path):
+        mt5_path = os.getenv("MT5_PATH", "")
+        if mt5_path:
+            if not mt5.initialize(path=mt5_path):
                 errors.append(f"MT5 not running: {mt5.last_error()}")
-            elif not mt5_path:
-                errors.append(f"MT5 not running: {mt5.last_error()}")
+        elif not mt5.initialize():
+            errors.append(f"MT5 not running: {mt5.last_error()}")
         if not errors:
             info = mt5.account_info()
             if info:
@@ -412,17 +413,17 @@ def main():
     if errors:
         error_msg = "\n".join(f"- {e}" for e in errors)
         logger.error(f"Health check FAILED:\n{error_msg}")
-        _notifier.send(f"<b>STARTUP FAILED</b>\n{error_msg}")
+        _notifier.send(f"❌ <b>فشل فحص النظام</b>\n{error_msg}")
         print(f"\n  HEALTH CHECK FAILED - {len(errors)} errors. Fix and retry.\n")
         return
     else:
         logger.info("  Health check: ALL PASS")
         _notifier.send(
-            "<b>HEALTH CHECK: ALL PASS</b>\n"
-            f"MT5: Connected\n"
-            f"Database: OK\n"
-            f"Config: OK\n"
-            "Starting bot..."
+            "✅ <b>فحص النظام — نجح</b>\n"
+            f"🔗 MT5: متصل\n"
+            f"💾 قاعدة البيانات: OK\n"
+            f"⚙️ الإعدادات: OK\n"
+            "🚀 جاري تشغيل البوت..."
         )
 
     # -- Initialize database --
@@ -458,7 +459,7 @@ def main():
 
     if not engine.start():
         logger.error("Failed to start engine. Is MT5 running?")
-        _notifier.send("<b>STARTUP FAILED</b>\nEngine could not connect to MT5.")
+        _notifier.send("❌ <b>فشل التشغيل</b>\nلم يتمكن المحرك من الاتصال بـ MT5.")
         return
 
     account = engine.adapter.get_account_info()

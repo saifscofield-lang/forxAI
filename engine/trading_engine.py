@@ -829,9 +829,10 @@ class TradingEngine:
                 if v2_count >= ML_TRAINING_THRESHOLD:
                     self._ml_ready_notified = True
                     self.notifier.send(
-                        f"<b>ML TRAINING READY</b>\n"
-                        f"Collected {v2_count} closed trades (v{ENGINE_VERSION}).\n"
-                        f"Run: <code>python scripts/train_ml.py</code>"
+                        f"🤖 <b>ML جاهز للتدريب</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 تم جمع {v2_count} صفقة مغلقة (v{ENGINE_VERSION})\n"
+                        f"⚡ شغّل: <code>python scripts/train_ml.py</code>"
                     )
                     logger.info(f"ML training threshold reached: {v2_count} trades")
         except Exception as e:
@@ -1269,11 +1270,9 @@ class TradingEngine:
                             f"({close_volume} lots @ {result['price']:.{digits}f}) | "
                             f"SL → {mid_sl:.{digits}f} | TP2 → {new_tp:.{digits}f}"
                         )
-                        self.notifier.send(
-                            f"🎯 [MONITOR] #{ticket} {symbol} {action}\n"
-                            f"TP1 HIT — Closed 50% ({close_volume} lots)\n"
-                            f"SL → {mid_sl:.{digits}f} (mid-profit)\n"
-                            f"TP2 → {new_tp:.{digits}f} (+1 ATR)"
+                        self.notifier.position_tp1(
+                            ticket, symbol, action, close_volume,
+                            result['price'], mid_sl, new_tp, digits
                         )
                         return
 
@@ -1299,10 +1298,8 @@ class TradingEngine:
                         f"[MONITOR] #{ticket} {symbol} {action} | BREAKEVEN "
                         f"SL → {be_sl:.{digits}f} | Move: {atr_units_moved:.1f}x ATR"
                     )
-                    self.notifier.send(
-                        f"🔒 [MONITOR] #{ticket} {symbol} {action}\n"
-                        f"BREAKEVEN: SL → {be_sl:.{digits}f}\n"
-                        f"Price moved {atr_units_moved:.1f}x ATR in favor"
+                    self.notifier.position_breakeven(
+                        ticket, symbol, action, be_sl, atr_units_moved, digits
                     )
 
     def _apply_trailing(self, ticket, symbol, action, current_price, current_sl,
@@ -1325,10 +1322,9 @@ class TradingEngine:
                         f"[MONITOR] #{ticket} {symbol} BUY | {phase} "
                         f"SL: {current_sl:.{digits}f} → {trail_sl:.{digits}f}"
                     )
-                    self.notifier.send(
-                        f"📈 [MONITOR] #{ticket} {symbol} BUY\n"
-                        f"{phase}: SL {current_sl:.{digits}f} → {trail_sl:.{digits}f}\n"
-                        f"Price: {current_price:.{digits}f} | TP: {current_tp:.{digits}f}"
+                    self.notifier.position_trailing(
+                        ticket, symbol, "BUY", phase, current_sl, trail_sl,
+                        current_price, current_tp, digits
                     )
         else:  # SELL
             trail_sl = round(current_price + atr * trail_mult, digits)
@@ -1339,10 +1335,9 @@ class TradingEngine:
                         f"[MONITOR] #{ticket} {symbol} SELL | {phase} "
                         f"SL: {current_sl:.{digits}f} → {trail_sl:.{digits}f}"
                     )
-                    self.notifier.send(
-                        f"📉 [MONITOR] #{ticket} {symbol} SELL\n"
-                        f"{phase}: SL {current_sl:.{digits}f} → {trail_sl:.{digits}f}\n"
-                        f"Price: {current_price:.{digits}f} | TP: {current_tp:.{digits}f}"
+                    self.notifier.position_trailing(
+                        ticket, symbol, "SELL", phase, current_sl, trail_sl,
+                        current_price, current_tp, digits
                     )
 
     def _save_scan_details(self, scan_details: list):
