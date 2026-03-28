@@ -99,10 +99,10 @@ if not df.empty:
             yaxis=dict(gridcolor="#1E2130"),
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_r:
-        st.plotly_chart(ml_confidence_histogram(df), use_container_width=True)
+        st.plotly_chart(ml_confidence_histogram(df), width="stretch")
 
 # ── Signal Log Table ──────────────────────────────────────────────────────────
 st.subheader(f"الإشارات ({len(df)})")
@@ -143,7 +143,7 @@ else:
     if "status" in display_cols:
         styled = styled.map(style_status, subset=["status"])
 
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width="stretch", hide_index=True)
 
     # Export
     csv = df[display_cols].to_csv(index=False)
@@ -171,10 +171,10 @@ if not df.empty and "ml_confidence" in df.columns and df["ml_confidence"].notna(
             "الإجمالي": total,
             "منفذة": executed,
             "مرشحة ML": filtered,
-            "نسبة المرور": f"{executed/total*100:.0f}%",
+            "نسبة المرور": f"{executed/total*100:.0f}%" if total > 0 else "0%",
             "متوسط الثقة (مرور)": f"{avg_conf_exec:.1%}" if pd.notna(avg_conf_exec) else "—",
             "متوسط الثقة (حجب)": f"{avg_conf_filt:.1%}" if pd.notna(avg_conf_filt) else "—",
         })
 
     if sym_stats:
-        st.dataframe(pd.DataFrame(sym_stats), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(sym_stats), width="stretch", hide_index=True)

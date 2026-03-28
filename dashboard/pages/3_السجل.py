@@ -47,7 +47,7 @@ if not trades_df.empty:
 
     strat_val = None if strategy_filter == "الكل" else strategy_filter
     if strat_val and "strategy" in trades_df.columns:
-        trades_df = trades_df[trades_df["strategy"].str.contains(strat_val, na=False)]
+        trades_df = trades_df[trades_df["strategy"].str.contains(strat_val, na=False, case=False)]
 
     if result_filter != "الكل" and "profitable" in trades_df.columns:
         trades_df = trades_df[trades_df["profitable"] == (result_filter == "رابحة")]
@@ -84,9 +84,9 @@ if not trades_df.empty and use_results:
 
     col_l, col_r = st.columns([3, 2])
     with col_l:
-        st.plotly_chart(cumulative_pnl_by_symbol(trades_df), use_container_width=True)
+        st.plotly_chart(cumulative_pnl_by_symbol(trades_df), width="stretch")
     with col_r:
-        st.plotly_chart(pnl_distribution_chart(trades_df), use_container_width=True)
+        st.plotly_chart(pnl_distribution_chart(trades_df), width="stretch")
 
 # ── Table ─────────────────────────────────────────────────────────────────────
 st.subheader(f"الصفقات ({len(trades_df)})")
@@ -126,7 +126,7 @@ else:
     if pnl_col in display_cols:
         styled = styled.map(_color_pnl, subset=[pnl_col])
 
-    st.dataframe(styled, use_container_width=True, hide_index=True,
+    st.dataframe(styled, width="stretch", hide_index=True,
                  column_config={
                      "ticket": st.column_config.NumberColumn("التذكرة", format="%d"),
                  })
@@ -152,12 +152,12 @@ if not trades_df.empty and "exit_reason" in trades_df.columns:
 
     col_left, col_right = st.columns([3, 3])
     with col_left:
-        st.dataframe(exit_counts, use_container_width=True, hide_index=True)
+        st.dataframe(exit_counts, width="stretch", hide_index=True)
     with col_right:
         if "pnl" in trades_df.columns:
             exit_pnl = trades_df.groupby("exit_reason")["pnl"].agg(["sum", "mean", "count"]).reset_index()
             exit_pnl.columns = ["سبب الخروج", "إجمالي الربح", "متوسط الربح", "العدد"]
             st.dataframe(
                 exit_pnl.style.format({"إجمالي الربح": "${:+,.2f}", "متوسط الربح": "${:+,.2f}"}),
-                use_container_width=True, hide_index=True,
+                width="stretch", hide_index=True,
             )

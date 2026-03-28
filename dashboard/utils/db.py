@@ -1,13 +1,15 @@
 """
 Database query helpers for the dashboard.
 All functions return DataFrames or dicts — no ORM objects exposed.
+Smart caching via @st.cache_data with appropriate TTLs.
 """
 import sys
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from typing import Optional
 
 import pandas as pd
+import streamlit as st
 
 sys.path.insert(0, ".")
 
@@ -22,6 +24,7 @@ def _session():
 
 # ── Account Snapshots ─────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_equity_curve(days: int = 30) -> pd.DataFrame:
     """Return account snapshots as DataFrame sorted by time."""
     session = _session()
@@ -51,6 +54,7 @@ def get_equity_curve(days: int = 30) -> pd.DataFrame:
         session.close()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_latest_snapshot() -> Optional[dict]:
     """Return the most recent account snapshot."""
     session = _session()
@@ -72,6 +76,7 @@ def get_latest_snapshot() -> Optional[dict]:
 
 # ── Trades ────────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=15, show_spinner=False)
 def get_open_trades() -> pd.DataFrame:
     """Return all open (not closed) trades."""
     session = _session()
@@ -87,6 +92,7 @@ def get_open_trades() -> pd.DataFrame:
         session.close()
 
 
+@st.cache_data(ttl=15, show_spinner=False)
 def get_monitor_states() -> dict:
     """Return monitor states as {ticket: {phase, tp1_closed, ...}}."""
     session = _session()
@@ -99,6 +105,7 @@ def get_monitor_states() -> dict:
                 "tp1_closed": r.tp1_closed,
                 "original_volume": r.original_volume,
                 "original_tp": r.original_tp,
+                "entry_atr": getattr(r, "entry_atr", None),
                 "updated_at": r.updated_at,
             }
         return states
@@ -108,6 +115,7 @@ def get_monitor_states() -> dict:
         session.close()
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_closed_trades(limit: int = 500, symbol: Optional[str] = None) -> pd.DataFrame:
     """Return closed trades, most recent first."""
     session = _session()
@@ -151,6 +159,7 @@ def _trades_to_df(rows) -> pd.DataFrame:
 
 # ── Signal Log ────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_signal_log(
     limit: int = 500,
     status: Optional[str] = None,
@@ -195,6 +204,7 @@ def get_signal_log(
 
 # ── Trade Results ─────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_trade_results(limit: int = 500, symbol: Optional[str] = None) -> pd.DataFrame:
     """Return closed trade results with P&L details."""
     session = _session()
@@ -220,6 +230,9 @@ def get_trade_results(limit: int = 500, symbol: Optional[str] = None) -> pd.Data
                 "profitable": r.profitable,
                 "ml_confidence": r.ml_confidence,
                 "strategy": r.strategy,
+                "news_nearby": getattr(r, "news_nearby", False),
+                "news_event_name": getattr(r, "news_event_name", None),
+                "news_impact": getattr(r, "news_impact", None),
             }
             for r in rows
         ])
@@ -229,6 +242,7 @@ def get_trade_results(limit: int = 500, symbol: Optional[str] = None) -> pd.Data
 
 # ── Aggregated Stats ──────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_performance_summary() -> dict:
     """Compute high-level performance metrics from trade results."""
     df = get_trade_results(limit=10000)
@@ -260,7 +274,7 @@ def get_performance_summary() -> dict:
     max_dd = drawdown.min()
 
     # Sharpe (daily returns approximation)
-    daily = df.groupby(df["close_time"].dt.date)["pnl"].sum()
+    daily = df.groupby(pd.to_datetime(df["close_time"]).dt.date)["pnl"].sum()
     sharpe = (daily.mean() / daily.std() * (252**0.5)) if len(daily) > 1 and daily.std() > 0 else 0.0
 
     return {
@@ -277,6 +291,7 @@ def get_performance_summary() -> dict:
     }
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_symbol_breakdown() -> pd.DataFrame:
     """Performance breakdown per symbol."""
     df = get_trade_results(limit=10000)
@@ -300,6 +315,7 @@ def get_symbol_breakdown() -> pd.DataFrame:
     return pd.DataFrame(groups).sort_values("total_pnl", ascending=False)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_monthly_pnl() -> pd.DataFrame:
     """Monthly P&L aggregation."""
     df = get_trade_results(limit=10000)
@@ -310,6 +326,7 @@ def get_monthly_pnl() -> pd.DataFrame:
     return df.groupby("month")["pnl"].sum().reset_index().rename(columns={"month": "Month", "pnl": "PnL"})
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_signal_stats() -> dict:
     """Signal distribution stats."""
     df = get_signal_log(limit=10000, days=90)
@@ -328,6 +345,7 @@ def get_signal_stats() -> dict:
 
 # ── News Events ──────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_upcoming_news(hours_ahead: int = 24) -> pd.DataFrame:
     """Return upcoming news events from DB."""
     session = _session()
@@ -359,6 +377,7 @@ def get_upcoming_news(hours_ahead: int = 24) -> pd.DataFrame:
         session.close()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_recent_news(hours_behind: int = 24) -> pd.DataFrame:
     """Return recent past news events from DB."""
     session = _session()
@@ -390,6 +409,7 @@ def get_recent_news(hours_behind: int = 24) -> pd.DataFrame:
         session.close()
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_news_stats(days: int = 30) -> dict:
     """News event statistics."""
     session = _session()
@@ -411,6 +431,7 @@ def get_news_stats(days: int = 30) -> dict:
 
 # ── Scan Logs ─────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_scan_logs(limit: int = 100, days: int = 7) -> pd.DataFrame:
     """Return recent scan logs."""
     session = _session()
@@ -443,5 +464,284 @@ def get_scan_logs(limit: int = 100, days: int = 7) -> pd.DataFrame:
             }
             for r in rows
         ])
+    finally:
+        session.close()
+
+
+# ── NEW: News-Trade Cross-Reference ──────────────────────────────────────────
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_trades_near_news(hours_window: int = 1) -> pd.DataFrame:
+    """Return trades that occurred near news events."""
+    session = _session()
+    try:
+        # Get trades with news_nearby flag
+        results = (
+            session.query(TradeResult)
+            .filter(TradeResult.news_nearby == True)
+            .order_by(TradeResult.close_time.desc())
+            .limit(500)
+            .all()
+        )
+        if not results:
+            return pd.DataFrame()
+
+        data = []
+        for r in results:
+            data.append({
+                "ticket": r.ticket,
+                "symbol": r.symbol,
+                "action": r.action,
+                "pnl": r.pnl,
+                "profitable": r.profitable,
+                "open_time": r.open_time,
+                "close_time": r.close_time,
+                "strategy": r.strategy,
+                "exit_reason": r.exit_reason,
+                "news_event_name": r.news_event_name,
+                "news_impact": r.news_impact,
+                "ml_confidence": r.ml_confidence,
+            })
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+
+# ── NEW: ML Predictions vs Actuals ───────────────────────────────────────────
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_ml_predictions_vs_actuals(symbol: Optional[str] = None) -> pd.DataFrame:
+    """Return signal log entries that have both ml_confidence and matching trade results."""
+    session = _session()
+    try:
+        from sqlalchemy import and_
+        q = (
+            session.query(
+                SignalLog.symbol,
+                SignalLog.ml_confidence,
+                SignalLog.ticket,
+                TradeResult.profitable,
+                TradeResult.pnl,
+            )
+            .join(TradeResult, SignalLog.ticket == TradeResult.ticket)
+            .filter(
+                SignalLog.ml_confidence.isnot(None),
+                SignalLog.ticket.isnot(None),
+            )
+        )
+        if symbol:
+            q = q.filter(SignalLog.symbol == symbol)
+
+        rows = q.all()
+        if not rows:
+            return pd.DataFrame()
+
+        return pd.DataFrame([
+            {
+                "symbol": r.symbol,
+                "ml_confidence": r.ml_confidence,
+                "ticket": r.ticket,
+                "profitable": r.profitable,
+                "pnl": r.pnl,
+            }
+            for r in rows
+        ])
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+
+# ── NEW: Error/Connection Signals ────────────────────────────────────────────
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_error_signals(days: int = 7) -> pd.DataFrame:
+    """Return signals with errors or technical issues."""
+    session = _session()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        from sqlalchemy import or_
+        rows = (
+            session.query(SignalLog)
+            .filter(
+                SignalLog.time >= cutoff,
+                or_(
+                    SignalLog.status == "ERROR",
+                    SignalLog.reason.like("%filling%"),
+                    SignalLog.reason.like("%AutoTrading%"),
+                    SignalLog.reason.like("%No money%"),
+                    SignalLog.reason.like("%connection%"),
+                    SignalLog.reason.like("%Market closed%"),
+                )
+            )
+            .order_by(SignalLog.time.desc())
+            .limit(500)
+            .all()
+        )
+        if not rows:
+            return pd.DataFrame()
+
+        data = []
+        for r in rows:
+            reason = r.reason or ""
+            if "filling" in reason.lower():
+                error_type = "Filling Mode"
+            elif "autotrading" in reason.lower():
+                error_type = "AutoTrading Disabled"
+            elif "no money" in reason.lower():
+                error_type = "No Money"
+            elif "market closed" in reason.lower():
+                error_type = "Market Closed"
+            elif "connection" in reason.lower():
+                error_type = "Connection Error"
+            else:
+                error_type = "Other Error"
+
+            data.append({
+                "time": r.time,
+                "symbol": r.symbol,
+                "action": r.action,
+                "strategy": r.strategy,
+                "status": r.status,
+                "reason": reason,
+                "error_type": error_type,
+            })
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        session.close()
+
+
+# ── NEW: Daily Report Data ───────────────────────────────────────────────────
+
+def get_daily_report_data(report_date: Optional[date] = None) -> dict:
+    """Collect all data for a daily report."""
+    if report_date is None:
+        report_date = datetime.now(timezone.utc).date()
+
+    day_start = datetime.combine(report_date, datetime.min.time())
+    day_end = datetime.combine(report_date, datetime.max.time())
+
+    session = _session()
+    try:
+        # Trades opened or closed today
+        trades_closed = session.query(Trade).filter(
+            Trade.is_closed == True,
+            Trade.close_time >= day_start,
+            Trade.close_time <= day_end,
+        ).all()
+
+        trades_opened = session.query(Trade).filter(
+            Trade.open_time >= day_start,
+            Trade.open_time <= day_end,
+        ).all()
+
+        open_positions = session.query(Trade).filter(Trade.is_closed == False).all()
+
+        # Signals today
+        signals = session.query(SignalLog).filter(
+            SignalLog.time >= day_start,
+            SignalLog.time <= day_end,
+        ).all()
+
+        # Latest snapshot
+        snap = session.query(AccountSnapshot).order_by(AccountSnapshot.time.desc()).first()
+
+        # Errors today
+        from sqlalchemy import or_
+        errors = session.query(SignalLog).filter(
+            SignalLog.time >= day_start,
+            SignalLog.time <= day_end,
+            or_(
+                SignalLog.status == "ERROR",
+                SignalLog.reason.like("%filling%"),
+                SignalLog.reason.like("%AutoTrading%"),
+                SignalLog.reason.like("%No money%"),
+            )
+        ).all()
+
+        # Build report
+        closed_pnl = sum(t.profit or 0 for t in trades_closed)
+        closed_wins = sum(1 for t in trades_closed if (t.profit or 0) > 0)
+        closed_losses = sum(1 for t in trades_closed if (t.profit or 0) < 0)
+
+        signal_counts = {}
+        for s in signals:
+            signal_counts[s.status] = signal_counts.get(s.status, 0) + 1
+
+        return {
+            "date": str(report_date),
+            "balance": snap.balance if snap else 0,
+            "equity": snap.equity if snap else 0,
+            "pnl": closed_pnl,
+            "trades_closed": len(trades_closed),
+            "trades_opened": len(trades_opened),
+            "open_count": len(open_positions),
+            "wins": closed_wins,
+            "losses": closed_losses,
+            "win_rate": (closed_wins / len(trades_closed) * 100) if trades_closed else 0,
+            "signals_total": len(signals),
+            "signals_executed": signal_counts.get("EXECUTED", 0),
+            "signals_rejected": signal_counts.get("RISK_REJECTED", 0),
+            "signals_ml_filtered": signal_counts.get("ML_FILTERED", 0),
+            "signals_news_filtered": signal_counts.get("NEWS_FILTERED", 0),
+            "errors_count": len(errors),
+            "closed_trades_detail": [
+                {
+                    "ticket": t.ticket,
+                    "symbol": t.symbol,
+                    "order_type": t.order_type,
+                    "profit": t.profit,
+                    "strategy": t.strategy,
+                }
+                for t in trades_closed
+            ],
+            "open_positions_detail": [
+                {
+                    "ticket": t.ticket,
+                    "symbol": t.symbol,
+                    "order_type": t.order_type,
+                    "profit": t.profit,
+                    "open_price": t.open_price,
+                    "stop_loss": t.stop_loss,
+                    "take_profit": t.take_profit,
+                    "strategy": t.strategy,
+                }
+                for t in open_positions
+            ],
+            "error_details": [
+                {"time": str(e.time), "symbol": e.symbol, "reason": e.reason}
+                for e in errors
+            ],
+        }
+    finally:
+        session.close()
+
+
+# ── NEW: Connection Timeline ─────────────────────────────────────────────────
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_connection_timeline(days: int = 7) -> pd.DataFrame:
+    """Return scan timestamps to identify connection gaps."""
+    session = _session()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        rows = (
+            session.query(ScanLog.time, ScanLog.scan_number, ScanLog.balance, ScanLog.equity)
+            .filter(ScanLog.time >= cutoff)
+            .order_by(ScanLog.time)
+            .all()
+        )
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame([
+            {"time": r.time, "scan_number": r.scan_number, "balance": r.balance, "equity": r.equity}
+            for r in rows
+        ])
+    except Exception:
+        return pd.DataFrame()
     finally:
         session.close()

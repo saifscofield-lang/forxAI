@@ -1,21 +1,41 @@
 """
 Download trading data from Google Drive sync folder.
-Run this on the DEV computer to pull latest data from the trading PC.
+Auto-detects DEV vs TRADING PC by serial number.
 
 Setup:
-1. Install Google Drive for Desktop: https://www.google.com/drive/download/
-2. Sign in with the SAME Google account used on the trading PC
-3. Google Drive will appear as a drive letter (e.g., G:\\)
-4. Update GDRIVE_PATH below if your drive letter is different
+1. Install Google Drive for Desktop
+2. Set GDRIVE_SYNC_PATH in .env
 """
 
 import sys
 import shutil
 import os
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, ".")
+
+# === Machine Identity ===
+DEV_SERIAL = "T5NRSG00540121F"
+
+
+def get_machine_serial():
+    """Get this machine's serial number."""
+    try:
+        result = subprocess.run(
+            ["powershell", "(Get-WmiObject Win32_BIOS).SerialNumber"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+    except Exception:
+        return "UNKNOWN"
+
+
+def get_machine_name():
+    """Return 'DEV PC' or 'TRADING PC' based on serial."""
+    serial = get_machine_serial()
+    return "DEV PC" if serial == DEV_SERIAL else "TRADING PC"
 
 # === CONFIGURATION ===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,7 +44,9 @@ GDRIVE_PATH = Path(os.getenv("GDRIVE_SYNC_PATH", "G:/My Drive/forexAI_data"))
 
 def sync_download():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    machine = get_machine_name()
     print(f"[{timestamp}] Downloading data from Google Drive...")
+    print(f"  This machine: {machine} (Serial: {get_machine_serial()})")
 
     if not GDRIVE_PATH.exists():
         print(f"ERROR: Google Drive folder not found: {GDRIVE_PATH}")

@@ -92,8 +92,8 @@ else:
         if not active:
             st.info("لا توجد إشارات نشطة. جميع الإشارات تمت تصفيتها بواسطة ML أو إدارة المخاطر.")
         else:
-            for sig in active:
-                _key = f"{sig.get('symbol')}_{sig.get('action')}_{sig.get('price', 0):.5f}"
+            for i, sig in enumerate(active):
+                _key = f"{sig.get('symbol')}_{sig.get('action')}_{sig.get('price', 0):.5f}_{sig.get('strategy', '')}_{i}"
                 action = sig.get("action", "?")
                 symbol = sig.get("symbol", "?")
                 price = sig.get("price", 0)
@@ -184,7 +184,7 @@ else:
     with tabs[2]:
         df = pd.DataFrame(signals)
         if not df.empty:
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
             csv = df.to_csv(index=False)
             st.download_button("⬇ تحميل CSV", csv, "scan_results.csv", "text/csv")
 
@@ -205,6 +205,6 @@ if st.button("تحميل الرسم", key="load_chart"):
         df_price = get_ohlcv(chart_symbol, chart_tf, bars=200)
         if not df_price.empty:
             fig = candlestick_chart(df_price, chart_symbol)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("تعذر تحميل بيانات الأسعار. هل MT5 متصل؟")

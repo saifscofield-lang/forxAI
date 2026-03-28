@@ -253,7 +253,7 @@ if results is not None:
             xaxis=dict(gridcolor="#1E2130"),
             yaxis=dict(gridcolor="#1E2130"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # Trades DataFrame
     trades_attr = None
@@ -276,7 +276,7 @@ if results is not None:
 
         if not df_trades.empty:
             st.subheader(f"سجل الصفقات ({len(df_trades)} صفقة)")
-            st.dataframe(df_trades, use_container_width=True, hide_index=True)
+            st.dataframe(df_trades, width="stretch", hide_index=True)
 
             csv = df_trades.to_csv(index=False)
             st.download_button(
@@ -295,6 +295,6 @@ if optimized_params:
     opt_rows = []
     for sym, params in optimized_params.items():
         opt_rows.append({"الزوج": sym, **params})
-    st.dataframe(pd.DataFrame(opt_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(opt_rows), width="stretch", hide_index=True)
 else:
     st.info("لم يتم العثور على معلمات محسّنة. شغّل `python scripts/optimize_strategy.py`.")

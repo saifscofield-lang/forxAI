@@ -1,21 +1,42 @@
 """
 Upload trading data to Google Drive sync folder.
-Run this on the TRADING computer (the one running paper_trade.py).
+Auto-detects DEV vs TRADING PC by serial number.
 
 Setup:
 1. Install Google Drive for Desktop: https://www.google.com/drive/download/
 2. Sign in with your Google account
-3. Google Drive will appear as a drive letter (e.g., G:)
-4. Update GDRIVE_PATH below if your drive letter is different
+3. Set GDRIVE_SYNC_PATH in .env
 """
 
 import sys
 import shutil
 import os
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, ".")
+
+# === Machine Identity ===
+DEV_SERIAL = "T5NRSG00540121F"
+
+
+def get_machine_serial():
+    """Get this machine's serial number."""
+    try:
+        result = subprocess.run(
+            ["powershell", "(Get-WmiObject Win32_BIOS).SerialNumber"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+    except Exception:
+        return "UNKNOWN"
+
+
+def get_machine_name():
+    """Return 'DEV PC' or 'TRADING PC' based on serial."""
+    serial = get_machine_serial()
+    return "DEV PC" if serial == DEV_SERIAL else "TRADING PC"
 
 # === CONFIGURATION ===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -87,9 +108,11 @@ def sync_upload():
             else:
                 print(f"  Skipped (unchanged): {src_dir.name}/")
 
-    # Write timestamp
+    # Write timestamp with machine identity
+    machine = get_machine_name()
+    serial = get_machine_serial()
     marker = GDRIVE_PATH / "last_sync.txt"
-    marker.write_text(f"Last upload: {timestamp}\nSource: TRADING PC\n")
+    marker.write_text(f"Last upload: {timestamp}\nSource: {machine}\nSerial: {serial}\n")
 
     print(f"\nDone! {copied} files synced to: {GDRIVE_PATH}")
     print("Google Drive will auto-upload to cloud.")

@@ -1,20 +1,34 @@
 """
 MT5 helper utilities for the dashboard.
 Wraps the MT5Adapter with dashboard-friendly return types.
+Thread-safe via lock around all MT5 operations.
 """
 import sys
+import threading
 from typing import Optional
 import pandas as pd
 
 sys.path.insert(0, ".")
 
+_lock = threading.Lock()
+_adapter = None
+MT5_AVAILABLE = False
+
 try:
     from execution.broker_adapters.mt5_adapter import MT5Adapter
-    _adapter = MT5Adapter()
     MT5_AVAILABLE = True
 except Exception:
-    MT5_AVAILABLE = False
-    _adapter = None
+    pass
+
+
+def _get_adapter():
+    """Lazy singleton with thread-safe initialization."""
+    global _adapter
+    if _adapter is None and MT5_AVAILABLE:
+        with _lock:
+            if _adapter is None:
+                _adapter = MT5Adapter()
+    return _adapter
 
 
 def get_connection_status() -> dict:
@@ -22,11 +36,13 @@ def get_connection_status() -> dict:
     if not MT5_AVAILABLE:
         return {"connected": False, "error": "MT5 package not available on this machine"}
     try:
-        connected = _adapter.connect()
-        if not connected:
-            return {"connected": False, "error": "MT5 failed to connect"}
-        info = _adapter.get_account_info()
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            connected = adapter.connect()
+            if not connected:
+                return {"connected": False, "error": "MT5 failed to connect"}
+            info = adapter.get_account_info()
+            adapter.disconnect()
         return {"connected": True, "account": info}
     except Exception as e:
         return {"connected": False, "error": str(e)}
@@ -37,10 +53,12 @@ def get_account_info() -> Optional[dict]:
     if not MT5_AVAILABLE:
         return None
     try:
-        if not _adapter.connect():
-            return None
-        info = _adapter.get_account_info()
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            if not adapter.connect():
+                return None
+            info = adapter.get_account_info()
+            adapter.disconnect()
         return info
     except Exception:
         return None
@@ -51,10 +69,12 @@ def get_open_positions() -> pd.DataFrame:
     if not MT5_AVAILABLE:
         return pd.DataFrame()
     try:
-        if not _adapter.connect():
-            return pd.DataFrame()
-        positions = _adapter.get_open_positions()
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            if not adapter.connect():
+                return pd.DataFrame()
+            positions = adapter.get_open_positions()
+            adapter.disconnect()
         return positions if positions is not None else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
@@ -65,14 +85,16 @@ def get_current_prices(symbols: list) -> dict:
     if not MT5_AVAILABLE:
         return {}
     try:
-        if not _adapter.connect():
-            return {}
-        prices = {}
-        for sym in symbols:
-            tick = _adapter.get_tick(sym)
-            if tick:
-                prices[sym] = tick
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            if not adapter.connect():
+                return {}
+            prices = {}
+            for sym in symbols:
+                tick = adapter.get_tick(sym)
+                if tick:
+                    prices[sym] = tick
+            adapter.disconnect()
         return prices
     except Exception:
         return {}
@@ -83,10 +105,12 @@ def get_ohlcv(symbol: str, timeframe: str = "H1", bars: int = 200) -> pd.DataFra
     if not MT5_AVAILABLE:
         return pd.DataFrame()
     try:
-        if not _adapter.connect():
-            return pd.DataFrame()
-        df = _adapter.get_ohlcv(symbol, timeframe, bars)
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            if not adapter.connect():
+                return pd.DataFrame()
+            df = adapter.get_ohlcv(symbol, timeframe, bars)
+            adapter.disconnect()
         return df if df is not None else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
@@ -168,10 +192,12 @@ def close_position(ticket: int) -> tuple:
     if not MT5_AVAILABLE:
         return False, "MT5 not available"
     try:
-        if not _adapter.connect():
-            return False, "MT5 connection failed"
-        result = _adapter.close_position(ticket)
-        _adapter.disconnect()
+        adapter = _get_adapter()
+        with _lock:
+            if not adapter.connect():
+                return False, "MT5 connection failed"
+            result = adapter.close_position(ticket)
+            adapter.disconnect()
         if result and result.get("success"):
             return True, f"Position {ticket} closed at {result.get('price')}"
         return False, result.get("error", "Unknown error")

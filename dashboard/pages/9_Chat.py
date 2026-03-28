@@ -9,12 +9,12 @@ import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
 
-st.title("💬 Trading Chat")
+st.title("Trading Chat")
 st.caption("Ask questions about your trades, performance, and data.")
 
 # ── Database helper ──────────────────────────────────────────────────────────
 def query_db(sql, params=None):
-    """Run a SQL query and return DataFrame."""
+    """Run a SQL query and return DataFrame. Uses parameterized queries."""
     db = sqlite3.connect("data/trading.db")
     try:
         return pd.read_sql_query(sql, db, params=params or [])
@@ -63,8 +63,14 @@ def get_today_trades():
 
 
 def get_best_worst_trades(n=5):
-    best = query_db(f"SELECT ticket, symbol, order_type, profit, strategy, close_time FROM trades WHERE is_closed=1 ORDER BY profit DESC LIMIT {n}")
-    worst = query_db(f"SELECT ticket, symbol, order_type, profit, strategy, close_time FROM trades WHERE is_closed=1 ORDER BY profit ASC LIMIT {n}")
+    best = query_db(
+        "SELECT ticket, symbol, order_type, profit, strategy, close_time FROM trades WHERE is_closed=1 ORDER BY profit DESC LIMIT ?",
+        [n]
+    )
+    worst = query_db(
+        "SELECT ticket, symbol, order_type, profit, strategy, close_time FROM trades WHERE is_closed=1 ORDER BY profit ASC LIMIT ?",
+        [n]
+    )
     return best, worst
 
 
@@ -95,10 +101,11 @@ def get_symbol_stats():
 
 
 def get_recent_trades(n=10):
-    return query_db(f"""
-        SELECT ticket, symbol, order_type, volume, open_price, close_price, profit, strategy, close_time
-        FROM trades WHERE is_closed=1 ORDER BY close_time DESC LIMIT {n}
-    """)
+    return query_db(
+        """SELECT ticket, symbol, order_type, volume, open_price, close_price, profit, strategy, close_time
+           FROM trades WHERE is_closed=1 ORDER BY close_time DESC LIMIT ?""",
+        [n]
+    )
 
 
 def get_trade_by_ticket(ticket):
@@ -106,14 +113,15 @@ def get_trade_by_ticket(ticket):
 
 
 def get_daily_pnl(days=7):
-    return query_db(f"""
-        SELECT date(close_time) as day,
+    return query_db(
+        """SELECT date(close_time) as day,
                COUNT(*) as trades,
                SUM(CASE WHEN profit>0 THEN 1 ELSE 0 END) as wins,
                ROUND(SUM(profit),2) as pnl
-        FROM trades WHERE is_closed=1 AND close_time >= date('now', '-{days} days')
-        GROUP BY date(close_time) ORDER BY day DESC
-    """)
+        FROM trades WHERE is_closed=1 AND close_time >= date('now', ?)
+        GROUP BY date(close_time) ORDER BY day DESC""",
+        [f"-{days} days"]
+    )
 
 
 def get_scan_count():
@@ -206,7 +214,7 @@ def process_question(q):
     # Ticket lookup
     if any(w in q_lower for w in ["ticket", "#"]):
         import re
-        numbers = re.findall(r'\d{8,}', q)
+        numbers = re.findall(r'\d{5,}', q)
         if numbers:
             df = get_trade_by_ticket(int(numbers[0]))
             if df.empty:

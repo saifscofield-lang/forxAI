@@ -3,7 +3,9 @@
 جداول شاملة للتداول، التقارير، الأخبار، وتدريب ML
 """
 from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, Boolean, UniqueConstraint, Index, Text
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from contextlib import contextmanager
 from datetime import datetime
 import os
 
@@ -13,9 +15,24 @@ engine = create_engine(
     DATABASE_URL,
     echo=False,
     connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
     execution_options={"compiled_cache": {}},
 )
 SessionLocal = sessionmaker(bind=engine)
+
+
+@contextmanager
+def get_db_session():
+    """Context manager for safe database sessions with auto commit/rollback."""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 class Base(DeclarativeBase):

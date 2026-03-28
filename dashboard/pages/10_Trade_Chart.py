@@ -41,11 +41,11 @@ def load_open_trades():
 
 
 @st.cache_data(ttl=300)
-def load_candles(symbol, timeframe="H1"):
+def load_candles(symbol, timeframe="H1", bars=500):
     path = f"data/raw/{symbol}/{timeframe}.parquet"
     if os.path.exists(path):
         df = pd.read_parquet(path)
-        return df.tail(500)  # Last 500 candles
+        return df.tail(bars)
     return pd.DataFrame()
 
 
@@ -113,7 +113,7 @@ else:
 
     # Candlestick
     fig.add_trace(go.Candlestick(
-        x=candles.index if hasattr(candles.index, 'strftime') else range(len(candles)),
+        x=candles.index.tolist() if hasattr(candles.index, 'strftime') else list(range(len(candles))),
         open=candles["open"], high=candles["high"],
         low=candles["low"], close=candles["close"],
         name="Price", increasing_line_color="#00C851", decreasing_line_color="#FF4444",
@@ -124,7 +124,7 @@ else:
         colors = ["#00C851" if c >= o else "#FF4444"
                   for c, o in zip(candles["close"], candles["open"])]
         fig.add_trace(go.Bar(
-            x=candles.index if hasattr(candles.index, 'strftime') else range(len(candles)),
+            x=candles.index.tolist() if hasattr(candles.index, 'strftime') else list(range(len(candles))),
             y=candles["volume"], name="Volume",
             marker_color=colors, opacity=0.5,
         ), row=2, col=1)
@@ -275,7 +275,7 @@ else:
         margin=dict(l=60, r=20, t=50, b=20),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # ── Trade Details Table ──────────────────────────────────────────────────────
 st.subheader("Trade Details")
@@ -295,7 +295,7 @@ with tab1:
         fmt = {"profit": "${:+,.2f}", "open_price": "{:.5f}", "close_price": "{:.5f}",
                "stop_loss": "{:.5f}", "take_profit": "{:.5f}", "volume": "{:.2f}"}
         styled = display.style.format(fmt).map(color_pnl, subset=["profit"])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width="stretch", hide_index=True)
 
         # PnL distribution chart
         fig_pnl = go.Figure()
@@ -314,7 +314,7 @@ with tab1:
             yaxis=dict(title="PnL ($)", gridcolor="#1E2130"),
             height=300,
         )
-        st.plotly_chart(fig_pnl, use_container_width=True)
+        st.plotly_chart(fig_pnl, width="stretch")
     else:
         st.info(f"No closed trades for {symbol}")
 
@@ -322,7 +322,7 @@ with tab2:
     if not sym_open.empty:
         fmt = {"profit": "${:+,.2f}", "open_price": "{:.5f}",
                "stop_loss": "{:.5f}", "take_profit": "{:.5f}", "volume": "{:.2f}"}
-        st.dataframe(sym_open.style.format(fmt), use_container_width=True, hide_index=True)
+        st.dataframe(sym_open.style.format(fmt), width="stretch", hide_index=True)
     else:
         st.info(f"No open trades for {symbol}")
 
@@ -339,4 +339,4 @@ if not sym_trades.empty:
     strat_stats["win_rate"] = (strat_stats["wins"] / strat_stats["trades"] * 100).round(1)
 
     fmt = {"pnl": "${:+,.2f}", "avg_pnl": "${:+,.2f}", "win_rate": "{:.1f}%"}
-    st.dataframe(strat_stats.style.format(fmt), use_container_width=True, hide_index=True)
+    st.dataframe(strat_stats.style.format(fmt), width="stretch", hide_index=True)

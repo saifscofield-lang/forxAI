@@ -68,10 +68,10 @@ tab_eq, tab_dd = st.tabs(["منحنى رأس المال", "التراجع"])
 with tab_eq:
     show_balance = st.checkbox("إظهار خط الرصيد", value=True)
     st.plotly_chart(equity_curve_chart(eq_df, show_balance=show_balance),
-                    use_container_width=True)
+                    width="stretch")
 
 with tab_dd:
-    st.plotly_chart(drawdown_chart(eq_df), use_container_width=True)
+    st.plotly_chart(drawdown_chart(eq_df), width="stretch")
 
 st.divider()
 
@@ -81,13 +81,13 @@ col_l, col_r = st.columns([3, 2])
 with col_l:
     st.subheader("الربح/الخسارة الشهري")
     if not monthly_df.empty:
-        st.plotly_chart(monthly_pnl_chart(monthly_df), use_container_width=True)
+        st.plotly_chart(monthly_pnl_chart(monthly_df), width="stretch")
     else:
         st.info("لا توجد بيانات شهرية بعد.")
 
 with col_r:
     st.subheader("ربح / خسارة")
-    st.plotly_chart(win_loss_pie(results_df), use_container_width=True)
+    st.plotly_chart(win_loss_pie(results_df), width="stretch")
 
 st.divider()
 
@@ -97,13 +97,13 @@ col_l2, col_r2 = st.columns([3, 2])
 with col_l2:
     st.subheader("الربح التراكمي حسب الزوج")
     if not results_df.empty:
-        st.plotly_chart(cumulative_pnl_by_symbol(results_df), use_container_width=True)
+        st.plotly_chart(cumulative_pnl_by_symbol(results_df), width="stretch")
     else:
         st.info("لا توجد نتائج صفقات بعد.")
 
 with col_r2:
     st.subheader("توزيع الربح/الخسارة")
-    st.plotly_chart(pnl_distribution_chart(results_df), use_container_width=True)
+    st.plotly_chart(pnl_distribution_chart(results_df), width="stretch")
 
 st.divider()
 
@@ -132,11 +132,11 @@ if not sym_df.empty:
                 "avg_pnl": "${:+,.2f}",
             }).map(_color_pf, subset=["profit_factor"])
               .map(_color_pnl, subset=["total_pnl", "avg_pnl"]),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     with col_radar:
-        st.plotly_chart(symbol_performance_radar(sym_df), use_container_width=True)
+        st.plotly_chart(symbol_performance_radar(sym_df), width="stretch")
 else:
     st.info("لا توجد بيانات أزواج بعد.")
 
@@ -182,6 +182,40 @@ if not results_df.empty and "pnl" in results_df.columns:
 
         payoff = avg_w / avg_l if avg_l > 0 else 0
         st.metric("نسبة العائد", f"{payoff:.2f}")
+
+    # ── Calmar & Sortino Ratios ────────────────────────────────────────────
+    st.divider()
+    st.subheader("نسب متقدمة")
+    col_s1, col_s2, col_s3 = st.columns(3)
+
+    # Sortino: use only negative daily returns for denominator
+    daily_returns = results_df.groupby(pd.to_datetime(results_df["close_time"]).dt.date)["pnl"].sum()
+    if len(daily_returns) > 1:
+        downside = daily_returns[daily_returns < 0]
+        downside_std = downside.std() if len(downside) > 1 else 0
+        sortino = (daily_returns.mean() / downside_std * (252**0.5)) if downside_std > 0 else 0
+    else:
+        sortino = 0
+
+    # Calmar: annualized return / max drawdown
+    total_days = max((pd.to_datetime(results_df["close_time"]).max() - pd.to_datetime(results_df["close_time"]).min()).days, 1)
+    annual_return = pnl.sum() / total_days * 365
+    max_dd_abs = abs(summary["max_drawdown"]) if summary["max_drawdown"] != 0 else 1
+    calmar = annual_return / max_dd_abs
+
+    # Recovery factor
+    recovery = pnl.sum() / max_dd_abs if max_dd_abs > 0 else 0
+
+    with col_s1:
+        st.metric("نسبة سورتينو", f"{sortino:.3f}",
+                  delta="جيد" if sortino >= 1.0 else ("مقبول" if sortino >= 0.5 else "ضعيف"),
+                  delta_color="normal" if sortino >= 0.5 else "inverse")
+    with col_s2:
+        st.metric("نسبة كالمار", f"{calmar:.3f}",
+                  delta_color="normal" if calmar >= 1.0 else "inverse")
+    with col_s3:
+        st.metric("عامل الاسترداد", f"{recovery:.2f}",
+                  delta_color="normal" if recovery >= 1.0 else "inverse")
 else:
     st.info("لا توجد نتائج صفقات لحساب الإحصائيات. نفّذ صفقات من الماسح.")
 
@@ -218,4 +252,4 @@ if not results_df.empty and "open_time" in results_df.columns and "close_time" i
             yaxis=dict(gridcolor="#1E2130"),
         )
         fig.add_hline(y=0, line_dash="dash", line_color="#666")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")

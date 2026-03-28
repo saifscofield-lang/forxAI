@@ -79,17 +79,15 @@ class MT5Adapter:
         password = password or os.getenv("MT5_PASSWORD", "")
         server   = server   or os.getenv("MT5_SERVER", "")
 
-        # Try connecting to already-running terminal first
-        if not mt5.initialize():
-            # Fallback: use path to target specific terminal
-            mt5_path = os.getenv("MT5_PATH", "")
-            if mt5_path:
-                if not mt5.initialize(path=mt5_path):
-                    logger.error(f"فشل تهيئة MT5: {mt5.last_error()}")
-                    return False
-            else:
+        # Use MT5_PATH if set to ensure correct terminal (not Deriv)
+        mt5_path = os.getenv("MT5_PATH", "")
+        if mt5_path:
+            if not mt5.initialize(path=mt5_path):
                 logger.error(f"فشل تهيئة MT5: {mt5.last_error()}")
                 return False
+        elif not mt5.initialize():
+            logger.error(f"فشل تهيئة MT5: {mt5.last_error()}")
+            return False
 
         # Only login if connected to wrong account
         info = mt5.account_info()
