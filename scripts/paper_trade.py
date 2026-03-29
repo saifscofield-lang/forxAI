@@ -45,11 +45,25 @@ cmd_handler: TelegramCommandHandler = None
 scan_count = 0
 
 
-def create_strategies(config):
-    """Create all strategies for all symbols - no ML filter, maximum signals."""
-    strategies = []
+def _load_approved():
+    """Load backtest-approved strategy-symbol pairs from backtest_approved.yaml."""
+    try:
+        with open("data/backtest_approved.yaml", "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        approved = data.get("approved", {})
+        if approved:
+            logger.info(f"Loaded {len(approved)} approved pairs from backtest_approved.yaml (run: {data.get('run_id', '?')})")
+        return approved
+    except FileNotFoundError:
+        logger.warning("No backtest_approved.yaml found — using default strategy selection")
+        return None
 
-    # Load optimized SMA params (if available)
+
+def create_strategies(config):
+    """Create strategies per symbol. If backtest_approved.yaml exists, only enable PASS pairs."""
+    strategies = []
+    approved = _load_approved()
+
     try:
         with open("data/optimized_params.yaml", "r") as f:
             opt_params = yaml.safe_load(f) or {}
@@ -60,65 +74,61 @@ def create_strategies(config):
 
     for symbol in instruments:
         params = opt_params.get(symbol, {})
-
-        # 1. SMA Crossover - DISABLED (IMP-03: 33% WR, -$1,522 net loss)
-        # Re-enable only after backtesting with H4 trend filter
-        # strategies.append(SMACrossoverStrategy(
-        #     symbol=symbol,
-        #     fast_period=int(params.get("fast_period", 20)),
-        #     slow_period=int(params.get("slow_period", 50)),
-        #     rsi_period=int(params.get("rsi_period", 14)),
-        #     atr_period=int(params.get("atr_period", 14)),
-        #     atr_sl_multiplier=float(params.get("atr_sl_mult", 1.5)),
-        #     atr_tp_multiplier=float(params.get("atr_tp_mult", 2.5)),
-        # ))
-
-        # IMP-09: Use per-symbol optimized SL/TP multipliers
         sl_mult = float(params.get("atr_sl_mult", 2.0))
         tp_mult = float(params.get("atr_tp_mult", 3.0))
+        added = []
 
-        # 2. RSI Reversal — IMP-51: exclude XAUUSD (0% WR), IMP-52: exclude USDCAD (33% WR)
-        if symbol not in ("XAUUSD", "USDCAD"):
+        # ── Check approved list or fallback to defaults ──
+        def is_approved(strat_name):
+            if approved is None:
+                # No backtest yet — use legacy defaults
+                if strat_name == "rsi_reversal" and symbol in ("XAUUSD", "USDCAD"):
+                    return False
+                if strat_name == "bollinger_bounce":
+                    return False  # IMP-49 default
+                if strat_name == "sma_crossover":
+                    return False  # IMP-03 default
+                return True
+            # Backtest exists — only allow PASS
+            return f"{symbol}_{strat_name}" in approved
+
+        # RSI Reversal
+        if is_approved("rsi_reversal"):
             strategies.append(RSIReversalStrategy(
-                symbol=symbol,
-                rsi_period=14,
-                oversold=30.0,
-                overbought=70.0,
-                atr_sl_multiplier=sl_mult,
-                atr_tp_multiplier=tp_mult,
+                symbol=symbol, rsi_period=14,
+                oversold=30.0, overbought=70.0,
+                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
             ))
+            added.append("RSI")
 
-        # 3. MACD Crossover (slightly wider than base)
-        strategies.append(MACDCrossoverStrategy(
-            symbol=symbol,
-            atr_sl_multiplier=sl_mult * 1.25,
-            atr_tp_multiplier=tp_mult * 1.15,
-        ))
+        # MACD Crossover
+        if is_approved("macd_crossover"):
+            strategies.append(MACDCrossoverStrategy(
+                symbol=symbol,
+                atr_sl_multiplier=sl_mult * 1.25,
+                atr_tp_multiplier=tp_mult * 1.15,
+            ))
+            added.append("MACD")
 
-        # 4. Bollinger Bounce — DISABLED (IMP-49): 41% WR, -$3,126, avg RR -0.11
-        # strategies.append(BollingerBounceStrategy(
-        #     symbol=symbol,
-        #     atr_sl_multiplier=sl_mult,
-        #     atr_tp_multiplier=tp_mult,
-        # ))
+        # Bollinger Bounce
+        if is_approved("bollinger_bounce"):
+            strategies.append(BollingerBounceStrategy(
+                symbol=symbol,
+                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+            ))
+            added.append("BB")
 
-        # 5. ML Direct Strategy — market-driven signal generation
+        # ML Direct Strategy
         ml_strat = MLDirectStrategy(
-            symbol=symbol,
-            confidence_threshold=0.55,
-            atr_sl_multiplier=sl_mult,
-            atr_tp_multiplier=tp_mult,
+            symbol=symbol, confidence_threshold=0.55,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
         )
         if ml_strat.model is not None:
             strategies.append(ml_strat)
-            ml_loaded = True
-        else:
-            ml_loaded = False
+            added.append("ML")
 
-        if symbol in ("XAUUSD", "USDCAD"):
-            logger.info(f"  {symbol}: {'2' if ml_loaded else '1'} strategies (MACD{', ML Direct' if ml_loaded else ''}) - RSI excluded (IMP-51/52)")
-        else:
-            logger.info(f"  {symbol}: {'3' if ml_loaded else '2'} strategies (RSI, MACD{', ML Direct' if ml_loaded else ''}) - SMA disabled (IMP-03), BB disabled (IMP-49)")
+        source = "backtest" if approved else "default"
+        logger.info(f"  {symbol}: {len(added)} strategies ({', '.join(added) or 'NONE'}) [{source}]")
 
     return strategies
 

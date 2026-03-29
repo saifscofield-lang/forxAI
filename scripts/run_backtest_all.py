@@ -1,0 +1,518 @@
+"""
+Universal Backtest Runner — اختبار شامل لجميع الاستراتيجيات × الأزواج × الأطر الزمنية
+النتائج تُحفظ في data/backtest_results.db + إشعارات Telegram
+يُنتج ملف data/backtest_approved.yaml يُقرأ من paper_trade.py
+
+Usage:
+    python scripts/run_backtest_all.py                        # الكل
+    python scripts/run_backtest_all.py --strategy macd_crossover
+    python scripts/run_backtest_all.py --symbol EURUSD
+    python scripts/run_backtest_all.py --timeframe M15
+"""
+import sys
+import os
+sys.path.insert(0, ".")
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+from dotenv import load_dotenv
+load_dotenv()
+
+import argparse
+import sqlite3
+import time as _time
+import yaml
+from datetime import datetime, timezone
+import pandas as pd
+from loguru import logger
+
+from backtest.universal_backtester import UniversalBacktester, BacktestResult
+from backtest.metrics import compute_metrics, format_report
+from strategies.rsi_reversal import RSIReversalStrategy
+from strategies.macd_crossover import MACDCrossoverStrategy
+from strategies.bollinger_bounce import BollingerBounceStrategy
+from observability.telegram_notifier import TelegramNotifier
+
+DB_PATH = "data/backtest_results.db"
+APPROVED_PATH = "data/backtest_approved.yaml"
+
+# Criteria for PASS
+MIN_TRADES = 15
+MIN_PROFIT_FACTOR = 1.05
+MAX_DRAWDOWN_PCT = 15.0
+
+
+def init_backtest_db():
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        run_time TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        strategy_version TEXT,
+        period_start TEXT,
+        period_end TEXT,
+        total_bars INTEGER,
+        initial_balance REAL,
+        final_balance REAL,
+        total_pnl REAL,
+        total_return_pct REAL,
+        total_trades INTEGER,
+        winning_trades INTEGER,
+        losing_trades INTEGER,
+        win_rate REAL,
+        profit_factor REAL,
+        sharpe_ratio REAL,
+        max_drawdown_pct REAL,
+        max_drawdown_dollar REAL,
+        avg_win REAL,
+        avg_loss REAL,
+        avg_pnl_per_trade REAL,
+        avg_win_pips REAL,
+        avg_loss_pips REAL,
+        avg_trade_bars REAL,
+        max_consecutive_wins INTEGER,
+        max_consecutive_losses INTEGER,
+        expectancy REAL,
+        spread_pips REAL,
+        risk_per_trade REAL,
+        verdict TEXT DEFAULT 'PENDING'
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        trade_num INTEGER,
+        symbol TEXT,
+        action TEXT,
+        strategy TEXT,
+        strategy_version TEXT,
+        entry_price REAL,
+        exit_price REAL,
+        stop_loss REAL,
+        take_profit REAL,
+        entry_time TEXT,
+        exit_time TEXT,
+        exit_reason TEXT,
+        lot_size REAL,
+        pnl REAL,
+        pnl_pips REAL,
+        rr_planned REAL,
+        rr_actual REAL,
+        duration_minutes INTEGER
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_equity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        time TEXT,
+        balance REAL,
+        equity REAL,
+        open_trades INTEGER
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        time TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def log_event(run_id: str, level: str, message: str):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute(
+            "INSERT INTO backtest_log (run_id, time, level, message) VALUES (?,?,?,?)",
+            (run_id, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), level, message)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def save_results(run_id: str, result: BacktestResult, report, spread_pips: float, risk_per_trade: float):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Verdict
+    passed = (
+        report.total_trades >= MIN_TRADES
+        and report.profit_factor >= MIN_PROFIT_FACTOR
+        and report.max_drawdown_pct <= MAX_DRAWDOWN_PCT
+        and report.total_pnl > 0
+    )
+    verdict = "PASS" if passed else "FAIL"
+
+    c.execute("""
+    INSERT INTO backtest_runs (
+        run_id, run_time, symbol, timeframe, strategy, strategy_version,
+        period_start, period_end, total_bars, initial_balance, final_balance,
+        total_pnl, total_return_pct, total_trades, winning_trades, losing_trades,
+        win_rate, profit_factor, sharpe_ratio, max_drawdown_pct, max_drawdown_dollar,
+        avg_win, avg_loss, avg_pnl_per_trade, avg_win_pips, avg_loss_pips,
+        avg_trade_bars, max_consecutive_wins, max_consecutive_losses, expectancy,
+        spread_pips, risk_per_trade, verdict
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        run_id, now, result.symbol, result.timeframe, result.strategy,
+        result.strategy_version, str(result.start_date), str(result.end_date),
+        len(result.equity_curve) * 5,
+        result.initial_balance, result.final_balance,
+        report.total_pnl, report.total_return_pct,
+        report.total_trades, report.winning_trades, report.losing_trades,
+        report.win_rate, report.profit_factor, report.sharpe_ratio,
+        report.max_drawdown_pct, report.max_drawdown_dollar,
+        report.avg_win, report.avg_loss, report.avg_pnl_per_trade,
+        report.avg_win_pips, report.avg_loss_pips, report.avg_trade_bars,
+        report.max_consecutive_wins, report.max_consecutive_losses,
+        report.expectancy, spread_pips, risk_per_trade, verdict,
+    ))
+
+    for t in result.trades:
+        c.execute("""
+        INSERT INTO backtest_trades (
+            run_id, trade_num, symbol, action, strategy, strategy_version,
+            entry_price, exit_price, stop_loss, take_profit,
+            entry_time, exit_time, exit_reason, lot_size,
+            pnl, pnl_pips, rr_planned, rr_actual, duration_minutes
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            run_id, t.id, t.symbol, t.action, t.strategy, t.strategy_version,
+            t.entry_price, t.exit_price, t.stop_loss, t.take_profit,
+            str(t.entry_time), str(t.exit_time), t.exit_reason, t.lot_size,
+            t.pnl, t.pnl_pips, t.rr_planned, t.rr_actual, t.duration_minutes,
+        ))
+
+    for eq in result.equity_curve:
+        c.execute(
+            "INSERT INTO backtest_equity (run_id, time, balance, equity, open_trades) VALUES (?,?,?,?,?)",
+            (run_id, str(eq["time"]), eq["balance"], eq["equity"], eq["open_trades"]))
+
+    conn.commit()
+    conn.close()
+    return verdict
+
+
+def generate_approved_yaml(master_run_id: str):
+    """Generate backtest_approved.yaml from latest PASS results — read by paper_trade.py."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT symbol, strategy, strategy_version, timeframe,
+               total_trades, win_rate, profit_factor, total_pnl,
+               max_drawdown_pct, sharpe_ratio, verdict
+        FROM backtest_runs
+        WHERE run_id LIKE ? AND verdict = 'PASS'
+        ORDER BY symbol, strategy
+    """, (f"{master_run_id}%",))
+    rows = c.fetchall()
+    conn.close()
+
+    approved = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "run_id": master_run_id,
+        "criteria": {
+            "min_trades": MIN_TRADES,
+            "min_profit_factor": MIN_PROFIT_FACTOR,
+            "max_drawdown_pct": MAX_DRAWDOWN_PCT,
+        },
+        "approved": {},
+    }
+
+    for symbol, strategy, version, tf, trades, wr, pf, pnl, dd, sharpe, verdict in rows:
+        key = f"{symbol}_{strategy}"
+        approved["approved"][key] = {
+            "symbol": symbol,
+            "strategy": strategy,
+            "version": version,
+            "timeframe": tf,
+            "trades": trades,
+            "win_rate": round(wr, 1),
+            "profit_factor": round(pf, 3),
+            "total_pnl": round(pnl, 2),
+            "max_drawdown_pct": round(dd, 1),
+            "sharpe": round(sharpe, 3),
+        }
+
+    with open(APPROVED_PATH, "w", encoding="utf-8") as f:
+        yaml.dump(approved, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    return approved
+
+
+def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
+    path = f"data/raw/{symbol}/{timeframe}.parquet"
+    if not os.path.exists(path):
+        return None
+    df = pd.read_parquet(path)
+    df = df.sort_values("time").reset_index(drop=True)
+    return df
+
+
+def create_all_strategies(symbol: str, config: dict):
+    try:
+        with open("data/optimized_params.yaml", "r") as f:
+            opt_params = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        opt_params = {}
+
+    params = opt_params.get(symbol, {})
+    sl_mult = float(params.get("atr_sl_mult", 2.0))
+    tp_mult = float(params.get("atr_tp_mult", 3.0))
+
+    return [
+        RSIReversalStrategy(
+            symbol=symbol, rsi_period=14,
+            oversold=30.0, overbought=70.0,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        ),
+        MACDCrossoverStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=sl_mult * 1.25,
+            atr_tp_multiplier=tp_mult * 1.15,
+        ),
+        BollingerBounceStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        ),
+    ]
+
+
+def main():
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level:<8}</level> | {message}",
+        level="INFO", colorize=True,
+    )
+    os.makedirs("data/logs", exist_ok=True)
+    logger.add(
+        "data/logs/backtest.log",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {message}",
+        level="INFO", rotation="10 MB",
+    )
+
+    parser = argparse.ArgumentParser(description="ForexAI Universal Backtest")
+    parser.add_argument("--strategy", type=str)
+    parser.add_argument("--symbol", type=str)
+    parser.add_argument("--timeframe", type=str, default=None,
+                        help="Specific timeframe, or omit to test all available")
+    args = parser.parse_args()
+
+    init_backtest_db()
+    notifier = TelegramNotifier()
+
+    with open("config/base.yaml", "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    instruments = config.get("instruments", [])
+    risk_per_trade = config.get("risk", {}).get("max_risk_per_trade", 0.01)
+
+    if args.symbol:
+        instruments = [i for i in instruments if i["symbol"] == args.symbol]
+
+    # Timeframes to test
+    if args.timeframe:
+        timeframes = [args.timeframe]
+    else:
+        timeframes = ["M15", "H1", "H4", "D1"]
+
+    master_run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    all_results = []
+
+    # Count total tests
+    total_tests = 0
+    for inst in instruments:
+        sym = inst["symbol"]
+        for tf in timeframes:
+            if os.path.exists(f"data/raw/{sym}/{tf}.parquet"):
+                strats = create_all_strategies(sym, config)
+                if args.strategy:
+                    strats = [s for s in strats if s.name == args.strategy]
+                total_tests += len(strats)
+
+    # ── Telegram: START ──
+    symbols_list = ", ".join(i["symbol"] for i in instruments)
+    start_msg = (
+        f"🧪 <b>بدء الباك تست الشامل</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🆔 Run: <code>{master_run_id}</code>\n"
+        f"📊 الأزواج: {symbols_list}\n"
+        f"⏱ الأطر: {', '.join(timeframes)}\n"
+        f"🔢 إجمالي الاختبارات: {total_tests}\n"
+        f"📋 المعايير: PF>{MIN_PROFIT_FACTOR} | DD<{MAX_DRAWDOWN_PCT}% | Trades>{MIN_TRADES}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"⏳ الوقت المتوقع: ~{total_tests * 20}s"
+    )
+    notifier.send(start_msg)
+    log_event(master_run_id, "INFO", f"Backtest started: {total_tests} tests")
+
+    print()
+    print("=" * 70)
+    print("     ForexAI Universal Backtest")
+    print(f"     Run ID: {master_run_id}")
+    print(f"     Timeframes: {', '.join(timeframes)}")
+    print(f"     Tests: {total_tests}")
+    print("=" * 70)
+    print()
+
+    global_start = _time.time()
+    completed = 0
+    passed_count = 0
+    failed_count = 0
+
+    for inst in instruments:
+        symbol = inst["symbol"]
+        pip_value = inst.get("pip_value", 0.0001)
+        spread = 2.0 if symbol == "XAUUSD" else 1.5
+
+        for tf in timeframes:
+            df = load_data(symbol, tf)
+            if df is None:
+                continue
+
+            logger.info(f"Loaded {len(df)} bars for {symbol}/{tf}")
+
+            strategies = create_all_strategies(symbol, config)
+            if args.strategy:
+                strategies = [s for s in strategies if s.name == args.strategy]
+
+            for strategy in strategies:
+                strategy.symbol = symbol
+                test_start = _time.time()
+
+                bt = UniversalBacktester(
+                    strategy=strategy,
+                    initial_balance=100_000.0,
+                    risk_per_trade=risk_per_trade,
+                    max_open_positions=1,
+                    pip_value=pip_value,
+                    spread_pips=spread,
+                )
+
+                warmup = 250 if tf in ("M15", "H1") else 100
+                result = bt.run(df, warmup=warmup)
+                report = compute_metrics(result)
+
+                test_run_id = f"{master_run_id}_{symbol}_{tf}_{strategy.name}"
+                verdict = save_results(test_run_id, result, report, spread, risk_per_trade)
+                elapsed = _time.time() - test_start
+
+                completed += 1
+                if verdict == "PASS":
+                    passed_count += 1
+                else:
+                    failed_count += 1
+
+                icon = "✅" if verdict == "PASS" else "❌"
+                log_msg = (
+                    f"[{completed}/{total_tests}] {icon} {symbol}/{tf} {strategy.name} v{strategy.VERSION} | "
+                    f"{report.total_trades} trades | WR {report.win_rate:.0f}% | "
+                    f"PF {report.profit_factor:.2f} | ${report.total_pnl:+,.0f} | "
+                    f"DD {report.max_drawdown_pct:.1f}% | {elapsed:.0f}s | {verdict}"
+                )
+                logger.info(log_msg)
+                log_event(master_run_id, "RESULT", log_msg)
+
+                print(format_report(report, result))
+                print()
+
+                all_results.append((symbol, tf, strategy.name, strategy.VERSION, result, report, verdict))
+
+    total_elapsed = _time.time() - global_start
+
+    # ── Combined Summary ──
+    if all_results:
+        print()
+        print("=" * 100)
+        print("     COMBINED SUMMARY")
+        print("=" * 100)
+        print(f"  {'Symbol':<10} {'TF':<5} {'Strategy':<20} {'Ver':<5} {'Trades':>6} {'WR%':>6} {'PF':>7} {'P&L':>12} {'DD%':>7} {'Sharpe':>7} {'Result':>8}")
+        print("-" * 100)
+
+        total_pnl = 0
+        total_trades = 0
+        total_wins = 0
+
+        for symbol, tf, strat_name, version, result, report, verdict in all_results:
+            icon = "+" if verdict == "PASS" else "-"
+            total_pnl += report.total_pnl
+            total_trades += report.total_trades
+            total_wins += report.winning_trades
+            print(
+                f"  {symbol:<10} {tf:<5} {strat_name:<20} {version:<5} "
+                f"{report.total_trades:>6} {report.win_rate:>5.1f}% "
+                f"{report.profit_factor:>7.3f} ${report.total_pnl:>+10,.2f} "
+                f"{report.max_drawdown_pct:>6.1f}% {report.sharpe_ratio:>7.3f} "
+                f"  [{icon} {verdict}]"
+            )
+
+        print("-" * 100)
+        combined_wr = total_wins / total_trades * 100 if total_trades > 0 else 0
+        print(f"  {'TOTAL':<10} {'':<5} {'':<20} {'':<5} {total_trades:>6} {combined_wr:>5.1f}% {'':>7} ${total_pnl:>+10,.2f}")
+        print(f"\n  PASSED: {passed_count} | FAILED: {failed_count} | Time: {total_elapsed:.0f}s")
+        print("=" * 100)
+
+    # ── Generate approved.yaml ──
+    approved = generate_approved_yaml(master_run_id)
+    approved_count = len(approved.get("approved", {}))
+    logger.info(f"Generated {APPROVED_PATH} with {approved_count} approved strategy-symbol pairs")
+
+    # ── Telegram: RESULTS ──
+    result_lines = [
+        f"🏁 <b>الباك تست انتهى</b>",
+        f"━━━━━━━━━━━━━━━━━━",
+        f"🆔 Run: <code>{master_run_id}</code>",
+        f"⏱ المدة: {int(total_elapsed)}s",
+        f"✅ نجح: {passed_count} | ❌ فشل: {failed_count}",
+        f"",
+    ]
+
+    if all_results:
+        result_lines.append("━━ <b>النتائج</b> ━━")
+        for symbol, tf, strat_name, version, result, report, verdict in all_results:
+            icon = "✅" if verdict == "PASS" else "❌"
+            result_lines.append(
+                f"  {icon} {symbol}/{tf} {strat_name} v{version}\n"
+                f"    {report.total_trades} صفقة | WR {report.win_rate:.0f}% | "
+                f"PF {report.profit_factor:.2f} | ${report.total_pnl:+,.0f}"
+            )
+
+    result_lines.append("")
+    result_lines.append(f"📁 معتمدة للتداول: <b>{approved_count}</b> استراتيجية-زوج")
+    result_lines.append(f"📋 الملف: {APPROVED_PATH}")
+
+    result_msg = "\n".join(result_lines)
+    if len(result_msg) > 4000:
+        result_msg = result_msg[:4000] + "\n... (مقتطع)"
+    notifier.send(result_msg)
+
+    log_event(master_run_id, "INFO", f"Backtest complete: {passed_count} PASS, {failed_count} FAIL, {total_elapsed:.0f}s")
+
+    print()
+    print(f"  Results DB: {DB_PATH}")
+    print(f"  Approved:   {APPROVED_PATH} ({approved_count} pairs)")
+    print()
+
+
+if __name__ == "__main__":
+    main()
