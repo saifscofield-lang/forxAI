@@ -35,10 +35,35 @@ from observability.telegram_notifier import TelegramNotifier
 DB_PATH = "data/backtest_results.db"
 APPROVED_PATH = "data/backtest_approved.yaml"
 
-# Criteria for PASS
-MIN_TRADES = 15
-MIN_PROFIT_FACTOR = 1.05
-MAX_DRAWDOWN_PCT = 15.0
+# ── Risk Profiles ──
+RISK_PROFILES = {
+    "strict": {
+        "name": "صارم (Live)",
+        "min_trades": 50,
+        "min_profit_factor": 1.3,
+        "max_drawdown_pct": 8.0,
+        "min_win_rate": 45.0,
+        "min_sharpe": 0.5,
+    },
+    "moderate": {
+        "name": "متوسط (Paper)",
+        "min_trades": 30,
+        "min_profit_factor": 1.15,
+        "max_drawdown_pct": 10.0,
+        "min_win_rate": 40.0,
+        "min_sharpe": 0.3,
+    },
+    "aggressive": {
+        "name": "مجازف (تجريبي)",
+        "min_trades": 15,
+        "min_profit_factor": 1.05,
+        "max_drawdown_pct": 15.0,
+        "min_win_rate": 35.0,
+        "min_sharpe": 0.0,
+    },
+}
+
+DEFAULT_PROFILE = "moderate"
 
 
 def init_backtest_db():
@@ -148,16 +173,19 @@ def log_event(run_id: str, level: str, message: str):
         pass
 
 
-def save_results(run_id: str, result: BacktestResult, report, spread_pips: float, risk_per_trade: float):
+def save_results(run_id: str, result: BacktestResult, report, spread_pips: float, risk_per_trade: float, profile: dict = None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Verdict
+    # Verdict based on active profile
+    p = profile or RISK_PROFILES[DEFAULT_PROFILE]
     passed = (
-        report.total_trades >= MIN_TRADES
-        and report.profit_factor >= MIN_PROFIT_FACTOR
-        and report.max_drawdown_pct <= MAX_DRAWDOWN_PCT
+        report.total_trades >= p["min_trades"]
+        and report.profit_factor >= p["min_profit_factor"]
+        and report.max_drawdown_pct <= p["max_drawdown_pct"]
+        and report.win_rate >= p["min_win_rate"]
+        and report.sharpe_ratio >= p["min_sharpe"]
         and report.total_pnl > 0
     )
     verdict = "PASS" if passed else "FAIL"
@@ -212,7 +240,7 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
     return verdict
 
 
-def generate_approved_yaml(master_run_id: str):
+def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFILE):
     """Generate backtest_approved.yaml from latest PASS results — read by paper_trade.py."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -227,13 +255,18 @@ def generate_approved_yaml(master_run_id: str):
     rows = c.fetchall()
     conn.close()
 
+    p = RISK_PROFILES[profile_name]
     approved = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "run_id": master_run_id,
+        "profile": profile_name,
+        "profile_name": p["name"],
         "criteria": {
-            "min_trades": MIN_TRADES,
-            "min_profit_factor": MIN_PROFIT_FACTOR,
-            "max_drawdown_pct": MAX_DRAWDOWN_PCT,
+            "min_trades": p["min_trades"],
+            "min_profit_factor": p["min_profit_factor"],
+            "max_drawdown_pct": p["max_drawdown_pct"],
+            "min_win_rate": p["min_win_rate"],
+            "min_sharpe": p["min_sharpe"],
         },
         "approved": {},
     }
@@ -316,7 +349,13 @@ def main():
     parser.add_argument("--symbol", type=str)
     parser.add_argument("--timeframe", type=str, default=None,
                         help="Specific timeframe, or omit to test all available")
+    parser.add_argument("--profile", type=str, default=DEFAULT_PROFILE,
+                        choices=list(RISK_PROFILES.keys()),
+                        help="Risk profile: strict, moderate, aggressive")
     args = parser.parse_args()
+
+    profile_name = args.profile
+    profile = RISK_PROFILES[profile_name]
 
     init_backtest_db()
     notifier = TelegramNotifier()
@@ -356,10 +395,13 @@ def main():
         f"🧪 <b>بدء الباك تست الشامل</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🆔 Run: <code>{master_run_id}</code>\n"
+        f"⚙️ المعيار: <b>{profile['name']}</b>\n"
         f"📊 الأزواج: {symbols_list}\n"
         f"⏱ الأطر: {', '.join(timeframes)}\n"
         f"🔢 إجمالي الاختبارات: {total_tests}\n"
-        f"📋 المعايير: PF>{MIN_PROFIT_FACTOR} | DD<{MAX_DRAWDOWN_PCT}% | Trades>{MIN_TRADES}\n"
+        f"📋 PF>{profile['min_profit_factor']} | DD<{profile['max_drawdown_pct']}% | "
+        f"WR>{profile['min_win_rate']}% | Sharpe>{profile['min_sharpe']} | "
+        f"Trades>{profile['min_trades']}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"⏳ الوقت المتوقع: ~{total_tests * 20}s"
     )
@@ -414,7 +456,7 @@ def main():
                 report = compute_metrics(result)
 
                 test_run_id = f"{master_run_id}_{symbol}_{tf}_{strategy.name}"
-                verdict = save_results(test_run_id, result, report, spread, risk_per_trade)
+                verdict = save_results(test_run_id, result, report, spread, risk_per_trade, profile)
                 elapsed = _time.time() - test_start
 
                 completed += 1
@@ -473,15 +515,16 @@ def main():
         print("=" * 100)
 
     # ── Generate approved.yaml ──
-    approved = generate_approved_yaml(master_run_id)
+    approved = generate_approved_yaml(master_run_id, profile_name)
     approved_count = len(approved.get("approved", {}))
-    logger.info(f"Generated {APPROVED_PATH} with {approved_count} approved strategy-symbol pairs")
+    logger.info(f"Generated {APPROVED_PATH} with {approved_count} approved pairs [{profile['name']}]")
 
     # ── Telegram: RESULTS ──
     result_lines = [
         f"🏁 <b>الباك تست انتهى</b>",
         f"━━━━━━━━━━━━━━━━━━",
         f"🆔 Run: <code>{master_run_id}</code>",
+        f"⚙️ المعيار: <b>{profile['name']}</b>",
         f"⏱ المدة: {int(total_elapsed)}s",
         f"✅ نجح: {passed_count} | ❌ فشل: {failed_count}",
         f"",
