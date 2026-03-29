@@ -18,6 +18,12 @@ if /i "%profile%"=="S" (set prof=strict) else if /i "%profile%"=="A" (set prof=a
 echo.
 echo  Selected: %prof%
 echo.
+echo  -- Cache --
+echo  Tests with same strategy version will be SKIPPED (cached).
+echo  Type F to FORCE re-run all tests, or press Enter to use cache.
+set /p forceflag="  Force re-run? (F/Enter) [cache]: "
+if /i "%forceflag%"=="F" (set forcearg=--force) else (set forcearg=)
+echo.
 
 echo  -- Scope --
 echo  [1] ALL strategies x ALL symbols x ALL timeframes (full)
@@ -33,28 +39,28 @@ if "%choice%"=="1" (
     echo.
     echo  Running FULL backtest [%prof%]...
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof%
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg%
 )
 if "%choice%"=="2" (
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% --timeframe H1
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg% --timeframe H1
 )
 if "%choice%"=="3" (
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% --strategy macd_crossover
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg% --strategy macd_crossover
 )
 if "%choice%"=="4" (
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% --strategy rsi_reversal
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg% --strategy rsi_reversal
 )
 if "%choice%"=="5" (
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% --strategy bollinger_bounce
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg% --strategy bollinger_bounce
 )
 if "%choice%"=="6" (
     set /p sym="  Enter symbol (e.g. EURUSD): "
     echo.
-    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% --symbol %sym%
+    venv\Scripts\python scripts\run_backtest_all.py --profile %prof% %forcearg% --symbol %sym%
 )
 
 echo.

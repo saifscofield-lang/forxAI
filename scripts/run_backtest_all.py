@@ -160,6 +160,31 @@ def init_backtest_db():
     conn.close()
 
 
+def is_already_tested(symbol: str, timeframe: str, strategy_name: str, strategy_version: str) -> dict | None:
+    """Check if this exact strategy version was already backtested. Returns the existing run or None."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            SELECT run_id, total_trades, win_rate, profit_factor, total_pnl,
+                   max_drawdown_pct, sharpe_ratio, verdict
+            FROM backtest_runs
+            WHERE symbol = ? AND timeframe = ? AND strategy = ? AND strategy_version = ?
+            ORDER BY run_time DESC LIMIT 1
+        """, (symbol, timeframe, strategy_name, strategy_version))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return {
+                "run_id": row[0], "total_trades": row[1], "win_rate": row[2],
+                "profit_factor": row[3], "total_pnl": row[4],
+                "max_drawdown_pct": row[5], "sharpe_ratio": row[6], "verdict": row[7],
+            }
+    except Exception:
+        pass
+    return None
+
+
 def log_event(run_id: str, level: str, message: str):
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -241,17 +266,23 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
 
 
 def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFILE):
-    """Generate backtest_approved.yaml from latest PASS results — read by paper_trade.py."""
+    """Generate backtest_approved.yaml from latest PASS results per strategy-symbol pair."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Get the latest PASS result for each symbol+strategy combo (not just this run)
     c.execute("""
         SELECT symbol, strategy, strategy_version, timeframe,
                total_trades, win_rate, profit_factor, total_pnl,
                max_drawdown_pct, sharpe_ratio, verdict
         FROM backtest_runs
-        WHERE run_id LIKE ? AND verdict = 'PASS'
+        WHERE verdict = 'PASS'
+        AND id IN (
+            SELECT MAX(id) FROM backtest_runs
+            WHERE verdict = 'PASS'
+            GROUP BY symbol, strategy, strategy_version, timeframe
+        )
         ORDER BY symbol, strategy
-    """, (f"{master_run_id}%",))
+    """)
     rows = c.fetchall()
     conn.close()
 
@@ -352,6 +383,8 @@ def main():
     parser.add_argument("--profile", type=str, default=DEFAULT_PROFILE,
                         choices=list(RISK_PROFILES.keys()),
                         help="Risk profile: strict, moderate, aggressive")
+    parser.add_argument("--force", action="store_true",
+                        help="Force re-run all tests (ignore cache)")
     args = parser.parse_args()
 
     profile_name = args.profile
@@ -421,6 +454,7 @@ def main():
     completed = 0
     passed_count = 0
     failed_count = 0
+    skipped_count = 0
 
     for inst in instruments:
         symbol = inst["symbol"]
@@ -440,6 +474,28 @@ def main():
 
             for strategy in strategies:
                 strategy.symbol = symbol
+                version = getattr(strategy, 'VERSION', '?')
+
+                # Skip if already tested with same version (unless --force)
+                existing = None if args.force else is_already_tested(symbol, tf, strategy.name, version)
+                if existing:
+                    completed += 1
+                    verdict = existing["verdict"]
+                    if verdict == "PASS":
+                        passed_count += 1
+                    else:
+                        failed_count += 1
+                    icon = "✅" if verdict == "PASS" else "❌"
+                    logger.info(
+                        f"[{completed}/{total_tests}] ⏭ {symbol}/{tf} {strategy.name} v{version} | "
+                        f"ALREADY TESTED | {existing['total_trades']} trades | "
+                        f"WR {existing['win_rate']:.0f}% | PF {existing['profit_factor']:.2f} | "
+                        f"${existing['total_pnl']:+,.0f} | [{verdict}]"
+                    )
+                    all_results.append((symbol, tf, strategy.name, version, None, existing, verdict))
+                    skipped_count += 1
+                    continue
+
                 test_start = _time.time()
 
                 bt = UniversalBacktester(
@@ -495,23 +551,41 @@ def main():
         total_trades = 0
         total_wins = 0
 
-        for symbol, tf, strat_name, version, result, report, verdict in all_results:
+        for symbol, tf, strat_name, version, result, report_or_cache, verdict in all_results:
             icon = "+" if verdict == "PASS" else "-"
-            total_pnl += report.total_pnl
-            total_trades += report.total_trades
-            total_wins += report.winning_trades
+            # Handle both fresh report (PerformanceReport) and cached dict
+            if isinstance(report_or_cache, dict):
+                r = report_or_cache
+                trades = r["total_trades"]
+                wr = r["win_rate"]
+                pf = r["profit_factor"]
+                pnl = r["total_pnl"]
+                dd = r["max_drawdown_pct"]
+                sharpe = r["sharpe_ratio"]
+                cached = " ⏭"
+            else:
+                r = report_or_cache
+                trades = r.total_trades
+                wr = r.win_rate
+                pf = r.profit_factor
+                pnl = r.total_pnl
+                dd = r.max_drawdown_pct
+                sharpe = r.sharpe_ratio
+                cached = ""
+            total_pnl += pnl
+            total_trades += trades
             print(
                 f"  {symbol:<10} {tf:<5} {strat_name:<20} {version:<5} "
-                f"{report.total_trades:>6} {report.win_rate:>5.1f}% "
-                f"{report.profit_factor:>7.3f} ${report.total_pnl:>+10,.2f} "
-                f"{report.max_drawdown_pct:>6.1f}% {report.sharpe_ratio:>7.3f} "
-                f"  [{icon} {verdict}]"
+                f"{trades:>6} {wr:>5.1f}% "
+                f"{pf:>7.3f} ${pnl:>+10,.2f} "
+                f"{dd:>6.1f}% {sharpe:>7.3f} "
+                f"  [{icon} {verdict}]{cached}"
             )
 
         print("-" * 100)
-        combined_wr = total_wins / total_trades * 100 if total_trades > 0 else 0
-        print(f"  {'TOTAL':<10} {'':<5} {'':<20} {'':<5} {total_trades:>6} {combined_wr:>5.1f}% {'':>7} ${total_pnl:>+10,.2f}")
-        print(f"\n  PASSED: {passed_count} | FAILED: {failed_count} | Time: {total_elapsed:.0f}s")
+        print(f"  {'TOTAL':<10} {'':<5} {'':<20} {'':<5} {total_trades:>6} {'':>6} {'':>7} ${total_pnl:>+10,.2f}")
+        skip_text = f" | SKIPPED (cached): {skipped_count}" if skipped_count else ""
+        print(f"\n  PASSED: {passed_count} | FAILED: {failed_count}{skip_text} | Time: {total_elapsed:.0f}s")
         print("=" * 100)
 
     # ── Generate approved.yaml ──
@@ -526,7 +600,7 @@ def main():
         f"🆔 Run: <code>{master_run_id}</code>",
         f"⚙️ المعيار: <b>{profile['name']}</b>",
         f"⏱ المدة: {int(total_elapsed)}s",
-        f"✅ نجح: {passed_count} | ❌ فشل: {failed_count}",
+        f"✅ نجح: {passed_count} | ❌ فشل: {failed_count} | ⏭ محفوظ: {skipped_count}",
         f"",
     ]
 
