@@ -404,9 +404,11 @@ def main():
 
     # Check config
     try:
-        with open("config/base.yaml", "r", encoding="utf-8") as f:
+        from engine.trading_engine import resolve_config_path
+        _cfg_path = resolve_config_path()
+        with open(_cfg_path, "r", encoding="utf-8") as f:
             _test_cfg = yaml.safe_load(f)
-        logger.info(f"  Config: OK ({len(_test_cfg.get('instruments', []))} instruments)")
+        logger.info(f"  Config: OK ({_cfg_path}, {len(_test_cfg.get('instruments', []))} instruments)")
     except Exception as e:
         errors.append(f"Config error: {e}")
 
@@ -429,8 +431,11 @@ def main():
     # -- Initialize database --
     init_db()
 
-    # -- Load config --
-    with open("config/base.yaml", "r", encoding="utf-8") as f:
+    # -- Load config (IMP-27: auto-select paper/live based on TRADING_MODE) --
+    from engine.trading_engine import resolve_config_path
+    _cfg_path = resolve_config_path()
+    logger.info(f"Loading config: {_cfg_path}")
+    with open(_cfg_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     # -- Create strategies (no ML filter) --

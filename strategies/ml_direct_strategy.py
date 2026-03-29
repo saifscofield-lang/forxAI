@@ -23,6 +23,7 @@ CLASS_MAP = {0: "SELL", 1: None, 2: "BUY"}
 
 class MLDirectStrategy:
     """Generate trade signals directly from ML model predictions."""
+    VERSION = "1.0"
 
     def __init__(
         self,
@@ -152,6 +153,7 @@ class MLDirectStrategy:
             "ml_confidence": round(confidence, 4),
             "ml_threshold": self.confidence_threshold,
             "strategy": self.name,
+            "strategy_version": self.VERSION,
             "reason": (
                 f"ML Direct {action} | conf={confidence:.1%} "
                 f"[SELL={proba[0]:.1%} NO={proba[1]:.1%} BUY={proba[2]:.1%}]"

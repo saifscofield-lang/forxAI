@@ -1,7 +1,7 @@
 """
-استراتيجية ارتداد بولنجر — Bollinger Bounce Strategy
-شراء عند لمس الحد السفلي، بيع عند لمس الحد العلوي (Mean Reversion)
+استراتيجية ارتداد بولنجر — Bollinger Bounce Strategy v2.0
 IMP-16: Only fire in range/low-volatility markets (BB Width filter)
+IMP-64: Bounce confirmation (prev outside → curr inside) + RSI 40/60 + BB width 2x avg filter
 """
 import pandas as pd
 from loguru import logger
@@ -9,9 +9,8 @@ from features.technical.indicators import add_bollinger_bands, add_atr, add_rsi
 
 
 class BollingerBounceStrategy:
-    """Bollinger Bounce — buy at lower band, sell at upper band.
-    IMP-16: Blocked when BB Width is wide (trending market).
-    """
+    """Bollinger Bounce v2.0 — confirmed reversal at bands with RSI + BB width filters."""
+    VERSION = "2.0"
 
     def __init__(
         self,
@@ -37,33 +36,48 @@ class BollingerBounceStrategy:
         tmp = add_rsi(tmp, 14)
 
         atr_col = f"atr_{self.atr_period}"
-        clean = tmp.dropna(subset=["bb_upper", "bb_lower", atr_col])
-        if len(clean) < 2:
+        clean = tmp.dropna(subset=["bb_upper", "bb_lower", atr_col, "rsi_14"])
+        if len(clean) < 20:
             return None
 
         curr = clean.iloc[-1]
+        prev = clean.iloc[-2]
+
         price = float(curr["close"])
         bb_upper = float(curr["bb_upper"])
         bb_lower = float(curr["bb_lower"])
+        prev_price = float(prev["close"])
+        prev_bb_lower = float(prev["bb_lower"])
+        prev_bb_upper = float(prev["bb_upper"])
         atr = float(curr[atr_col])
-        rsi = float(curr.get("rsi_14", 50))
+        rsi = float(curr["rsi_14"])
 
         # IMP-16: Block BB signals in trending/volatile markets
         bb_width_pct = (bb_upper - bb_lower) / price if price > 0 else 0
         if bb_width_pct > self.max_bb_width_pct:
-            return None  # BB too wide = trending market, skip
+            return None
 
         signal_action = None
 
-        # BUY: price at or below lower Bollinger Band
-        if price <= bb_lower:
+        # IMP-64: Confirmation — prev candle was OUTSIDE band, current closed BACK INSIDE
+        if prev_price <= prev_bb_lower and price > bb_lower:
             signal_action = "BUY"
-
-        # SELL: price at or above upper Bollinger Band
-        elif price >= bb_upper:
+        elif prev_price >= prev_bb_upper and price < bb_upper:
             signal_action = "SELL"
 
         if signal_action is None:
+            return None
+
+        # IMP-64: RSI must confirm the reversal (forex thresholds: 40/60)
+        if signal_action == "BUY" and rsi > 40:
+            return None
+        if signal_action == "SELL" and rsi < 60:
+            return None
+
+        # IMP-64: BB Width expanding filter — don't counter strong momentum
+        bb_width = bb_upper - bb_lower
+        bb_width_avg = float((clean["bb_upper"] - clean["bb_lower"]).tail(20).mean())
+        if bb_width > bb_width_avg * 2.0:
             return None
 
         if signal_action == "BUY":
@@ -75,7 +89,10 @@ class BollingerBounceStrategy:
 
         bb_range = bb_upper - bb_lower
         bb_pos = (price - bb_lower) / bb_range if bb_range > 0 else 0.5
-        reason = f"BB bounce {signal_action} | BB_pos={bb_pos:.2f} RSI={rsi:.1f}"
+        reason = (
+            f"BB bounce {signal_action} | BB_pos={bb_pos:.2f} RSI={rsi:.1f} "
+            f"BBW={bb_width_pct:.4f} BBW_avg_ratio={bb_width/bb_width_avg:.2f}"
+        )
         logger.info(f"[{self.symbol}] {reason}")
 
         return {
@@ -87,6 +104,7 @@ class BollingerBounceStrategy:
             "atr": round(atr, 5),
             "rsi": round(rsi, 2),
             "strategy": self.name,
+            "strategy_version": self.VERSION,
             "reason": reason,
             "status": "ACTIVE",
         }

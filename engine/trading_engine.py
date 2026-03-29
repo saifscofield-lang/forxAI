@@ -21,14 +21,29 @@ from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
 
 
-ENGINE_VERSION = "2.1"  # Hybrid monitor: scaled TP, partial close, dynamic trailing
+ENGINE_VERSION = "2.2"  # IMP-27: auto config selection + IMP-62-65 strategy versioning
 ML_TRAINING_THRESHOLD = 200  # Minimum closed trades needed for ML training
+
+
+def resolve_config_path(config_path: str = None) -> str:
+    """IMP-27: Auto-select config based on TRADING_MODE env var."""
+    if config_path and config_path != "config/base.yaml":
+        return config_path
+    import os
+    mode = os.getenv("TRADING_MODE", "paper").lower()
+    mode_map = {"paper": "config/paper.yaml", "live": "config/live.yaml"}
+    selected = mode_map.get(mode, "config/base.yaml")
+    # Fallback to base.yaml if mode-specific file doesn't exist
+    if not os.path.exists(selected):
+        selected = "config/base.yaml"
+    return selected
 
 
 class TradingEngine:
     """محرك التداول الرئيسي"""
 
     def __init__(self, config_path: str = "config/base.yaml"):
+        config_path = resolve_config_path(config_path)
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
 
@@ -738,6 +753,7 @@ class TradingEngine:
                 stop_loss=signal["stop_loss"],
                 take_profit=signal["take_profit"],
                 strategy=signal["strategy"],
+                strategy_version=signal.get("strategy_version"),
                 comment=signal.get("reason", ""),
                 engine_version=ENGINE_VERSION,
             )
@@ -792,6 +808,7 @@ class TradingEngine:
                 ml_threshold=signal.get("ml_threshold"),
                 ticket=ticket,
                 features_json=signal.get("features_json"),
+                strategy_version=signal.get("strategy_version"),
             )
             session.add(log)
             session.commit()
@@ -939,6 +956,7 @@ class TradingEngine:
             risk_reward_planned=rr_planned,
             risk_reward_actual=rr_actual,
             engine_version=ENGINE_VERSION,
+            strategy_version=trade.strategy_version,
         )
 
         # Try to attach ML confidence, features, and context from SignalLog
@@ -950,6 +968,8 @@ class TradingEngine:
             result.features_json = signal_log.features_json
             result.atr_at_entry = signal_log.atr
             result.rsi_at_entry = signal_log.rsi
+            if not result.strategy_version:
+                result.strategy_version = signal_log.strategy_version
 
         session.add(result)
         logger.info(
@@ -1257,11 +1277,12 @@ class TradingEngine:
                             mid_sl = entry_price - (entry_price - current_price) * 0.5
                         mid_sl = round(mid_sl, digits)
 
-                        # Set TP2 = original TP + 1.0x ATR
+                        # IMP-35: TP2 based on momentum strength
+                        tp2_mult = self._momentum_tp_multiplier(symbol, action)
                         if action == "BUY":
-                            new_tp = round(original_tp + atr * 1.0, digits)
+                            new_tp = round(original_tp + atr * tp2_mult, digits)
                         else:
-                            new_tp = round(original_tp - atr * 1.0, digits)
+                            new_tp = round(original_tp - atr * tp2_mult, digits)
 
                         self.adapter.modify_position(ticket, stop_loss=mid_sl, take_profit=new_tp)
 
@@ -1302,9 +1323,52 @@ class TradingEngine:
                         ticket, symbol, action, be_sl, atr_units_moved, digits
                     )
 
+    def _momentum_tp_multiplier(self, symbol: str, action: str) -> float:
+        """IMP-35: Dynamic TP2 multiplier based on MACD histogram + RSI momentum.
+        Strong momentum: 1.5x ATR. Weak momentum: 1.0x ATR."""
+        try:
+            df = self.adapter.get_ohlcv(symbol, "H1", 100)
+            if df is None or df.empty:
+                return 1.0
+            df = add_macd(df)
+            df = add_rsi(df, 14)
+            clean = df.dropna(subset=["macd_hist", "rsi_14"])
+            if len(clean) < 2:
+                return 1.0
+
+            hist = float(clean.iloc[-1]["macd_hist"])
+            prev_hist = float(clean.iloc[-2]["macd_hist"])
+            rsi = float(clean.iloc[-1]["rsi_14"])
+
+            # Check if momentum is strong in signal direction
+            if action == "BUY":
+                strong = hist > prev_hist and 55 <= rsi <= 75
+            else:
+                strong = hist < prev_hist and 25 <= rsi <= 45
+
+            if strong:
+                logger.info(f"[MONITOR] {symbol} strong momentum → TP2 = 1.5x ATR")
+                return 1.5
+            return 1.0
+        except Exception:
+            return 1.0
+
+    @staticmethod
+    def _session_trail_adjust(trail_mult: float) -> float:
+        """IMP-34: Adjust trailing multiplier based on current trading session.
+        London (07-16 UTC): normal. Asia (00-07 UTC): widen +0.3x. NY overlap (12-16): tighten -0.1x."""
+        from datetime import datetime, timezone
+        hour = datetime.now(timezone.utc).hour
+        if 12 <= hour < 16:   # NY-London overlap — high liquidity, tighter trail
+            return max(trail_mult - 0.1, 0.3)
+        elif 0 <= hour < 7:   # Asian session — lower volatility, wider trail
+            return trail_mult + 0.3
+        return trail_mult     # London session — use configured multiplier
+
     def _apply_trailing(self, ticket, symbol, action, current_price, current_sl,
                         atr, trail_mult, digits, phase):
-        """Apply trailing stop at trail_mult * ATR distance."""
+        """Apply trailing stop at trail_mult * ATR distance (IMP-34: session-adjusted)."""
+        trail_mult = self._session_trail_adjust(trail_mult)
         # Get current TP for reporting
         positions = self.adapter.get_open_positions()
         current_tp = 0

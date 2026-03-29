@@ -83,6 +83,7 @@ class Trade(Base):
     is_closed     = Column(Boolean, default=False)
     comment       = Column(String(100), nullable=True)
     engine_version = Column(String(10), nullable=True)   # e.g. "2.0" — for filtering ML training data
+    strategy_version = Column(String(10), nullable=True)  # e.g. "2.0" — strategy version at trade time
 
 
 class SignalLog(Base):
@@ -105,6 +106,7 @@ class SignalLog(Base):
     ml_threshold    = Column(Float, nullable=True)    # Required threshold
     ticket          = Column(Integer, nullable=True)  # MT5 ticket if executed
     features_json   = Column(String, nullable=True)   # Feature snapshot (JSON)
+    strategy_version = Column(String(10), nullable=True)  # Strategy version at signal time
 
     __table_args__ = (
         Index("ix_signal_symbol_time", "symbol", "time"),
@@ -155,6 +157,7 @@ class TradeResult(Base):
     news_event_name = Column(String(200), nullable=True)        # Nearest news event name
     news_impact     = Column(String(10), nullable=True)         # LOW / MEDIUM / HIGH
     engine_version  = Column(String(10), nullable=True)         # e.g. "2.0" — for filtering ML training data
+    strategy_version = Column(String(10), nullable=True)        # Strategy version at trade time
 
 
 class AccountSnapshot(Base):
@@ -342,6 +345,27 @@ class IndicatorSnapshot(Base):
     )
 
 
+class StrategyImprovement(Base):
+    """سجل التحسينات المطبقة على الاستراتيجيات — لتتبع أي نسخة أنتجت كل صفقة."""
+    __tablename__ = "strategy_improvements"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    improvement_code  = Column(String(20), unique=True, nullable=False)   # e.g. IMP-62
+    strategy_name     = Column(String(50), nullable=False)
+    version_before    = Column(String(10), nullable=False)
+    version_after     = Column(String(10), nullable=False)
+    description       = Column(String(500), nullable=False)
+    changes_summary   = Column(Text, nullable=True)
+    expected_impact   = Column(String(200), nullable=True)
+    applied           = Column(Boolean, default=False)                    # هل تم التنفيذ؟
+    applied_at        = Column(DateTime, nullable=True)                   # تاريخ التنفيذ
+    created_at        = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_imp_strategy", "strategy_name"),
+    )
+
+
 class MonitorState(Base):
     """حالة المونيتور لكل صفقة مفتوحة — تُحفظ لمنع فقدان الحالة عند إعادة التشغيل."""
     __tablename__ = "monitor_states"
@@ -381,6 +405,14 @@ def init_db():
             cols = [r[1] for r in c.fetchall()]
             if cols and "engine_version" not in cols:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN engine_version TEXT")
+                conn.commit()
+
+        # Add strategy_version to trades, trade_results, signal_logs if missing
+        for table in ("trades", "trade_results", "signal_logs"):
+            c.execute(f"PRAGMA table_info({table})")
+            cols = [r[1] for r in c.fetchall()]
+            if cols and "strategy_version" not in cols:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN strategy_version TEXT")
                 conn.commit()
 
         conn.close()

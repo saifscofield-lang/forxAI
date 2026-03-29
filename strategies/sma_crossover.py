@@ -10,6 +10,7 @@ from features.technical.indicators import add_sma, add_rsi, add_atr
 
 class SMACrossoverStrategy:
     """Simple SMA Crossover with RSI filter"""
+    VERSION = "1.0"
 
     def __init__(
         self,
@@ -81,6 +82,7 @@ class SMACrossoverStrategy:
                     "atr": round(atr, 5),
                     "rsi": round(rsi, 2),
                     "strategy": self.name,
+                    "strategy_version": self.VERSION,
                     "reason": f"SMA{self.fast_period} crossed above SMA{self.slow_period}, RSI={rsi:.1f}",
                 }
                 logger.info(f"📈 BUY signal | {signal['reason']}")
@@ -100,6 +102,7 @@ class SMACrossoverStrategy:
                     "atr": round(atr, 5),
                     "rsi": round(rsi, 2),
                     "strategy": self.name,
+                    "strategy_version": self.VERSION,
                     "reason": f"SMA{self.fast_period} crossed below SMA{self.slow_period}, RSI={rsi:.1f}",
                 }
                 logger.info(f"📉 SELL signal | {signal['reason']}")

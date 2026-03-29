@@ -12,6 +12,7 @@ from features.ml.feature_engine import build_features, get_feature_columns
 
 class MLFilteredStrategy:
     """SMA Crossover + LightGBM quality filter."""
+    VERSION = "1.0"
 
     def __init__(
         self,
@@ -149,6 +150,7 @@ class MLFilteredStrategy:
             "ml_confidence": ml_confidence,
             "ml_threshold": self.confidence_threshold if self.model else None,
             "strategy": self.name,
+            "strategy_version": self.VERSION,
             "reason": reason,
             "status": status,
             "features_json": features_json,

@@ -1,0 +1,61 @@
+# ============================================================
+# إعدادات التداول التجريبي (Paper Trading)
+# مخاطر أعلى للاختبار وجمع البيانات
+# ============================================================
+
+system:
+  name: "ForexAI Trading Platform"
+  version: "0.3.0"
+  mode: "paper"
+
+# --- الأدوات المالية (7 أزواج) ---
+instruments:
+  - symbol: "EURUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "GBPUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDJPY"
+    digits: 3
+    pip_value: 0.01
+  - symbol: "XAUUSD"
+    digits: 2
+    pip_value: 0.01
+  - symbol: "AUDUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCAD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCHF"
+    digits: 5
+    pip_value: 0.0001
+
+# --- الإطار الزمني ---
+timeframes:
+  primary: "H1"
+  secondary: "H4"
+  confirmation: "M15"
+
+# --- إدارة المخاطر (مرنة للاختبار) ---
+risk:
+  max_risk_per_trade: 0.01     # 1% per trade
+  max_daily_drawdown: 1.00     # معطّل للاختبار
+  max_daily_loss: 1.00         # معطّل للاختبار
+  max_open_positions: 8
+  max_correlated_positions: 3
+  max_total_risk: 0.03         # 3% portfolio risk
+  min_sl_atr_multiplier: 1.5
+
+# --- جلب البيانات ---
+data:
+  history_bars: 1000
+  update_interval_seconds: 5
+
+# --- التسجيل ---
+logging:
+  level: "INFO"
+  file: "data/logs/system.log"
+  rotation: "10 MB"
+  retention: "30 days"

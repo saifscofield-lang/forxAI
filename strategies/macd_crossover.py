@@ -1,15 +1,16 @@
 """
-استراتيجية تقاطع MACD — MACD Crossover Strategy
-شراء عند تقاطع MACD فوق خط الإشارة، بيع عند تقاطع تحته
-استراتيجية عدوانية لجمع بيانات التدريب
+استراتيجية تقاطع MACD — MACD Crossover Strategy v2.0
+IMP-63: EMA50/200 trend confirmation + histogram momentum filter
+شراء فقط في ترند صاعد مؤكد، بيع فقط في ترند هابط مؤكد
 """
 import pandas as pd
 from loguru import logger
-from features.technical.indicators import add_macd, add_atr
+from features.technical.indicators import add_macd, add_atr, add_ema
 
 
 class MACDCrossoverStrategy:
-    """MACD Crossover — signal on MACD/signal line cross."""
+    """MACD Crossover v2.0 — signal on MACD/signal line cross with EMA trend + histogram momentum."""
+    VERSION = "2.0"
 
     def __init__(
         self,
@@ -28,9 +29,11 @@ class MACDCrossoverStrategy:
         tmp = df.copy()
         tmp = add_macd(tmp)
         tmp = add_atr(tmp, self.atr_period)
+        tmp = add_ema(tmp, 50)
+        tmp = add_ema(tmp, 200)
 
         atr_col = f"atr_{self.atr_period}"
-        clean = tmp.dropna(subset=["macd_line", "macd_signal", atr_col])
+        clean = tmp.dropna(subset=["macd_line", "macd_signal", "macd_hist", atr_col, "ema_50", "ema_200"])
         if len(clean) < 2:
             return None
 
@@ -41,20 +44,32 @@ class MACDCrossoverStrategy:
         macd_sig = float(curr["macd_signal"])
         prev_macd = float(prev["macd_line"])
         prev_sig = float(prev["macd_signal"])
+        hist = float(curr["macd_hist"])
+        prev_hist = float(prev["macd_hist"])
         atr = float(curr[atr_col])
         price = float(curr["close"])
+        ema_50 = float(curr["ema_50"])
+        ema_200 = float(curr["ema_200"])
 
         signal_action = None
 
-        # BUY: MACD crosses above signal line
+        # BUY: MACD crosses above signal line + confirmed uptrend
         if prev_macd <= prev_sig and macd > macd_sig:
-            signal_action = "BUY"
+            if price > ema_50 and ema_50 > ema_200:
+                signal_action = "BUY"
 
-        # SELL: MACD crosses below signal line
+        # SELL: MACD crosses below signal line + confirmed downtrend
         elif prev_macd >= prev_sig and macd < macd_sig:
-            signal_action = "SELL"
+            if price < ema_50 and ema_50 < ema_200:
+                signal_action = "SELL"
 
         if signal_action is None:
+            return None
+
+        # Histogram momentum must be increasing in signal direction
+        if signal_action == "BUY" and hist <= prev_hist:
+            return None
+        if signal_action == "SELL" and hist >= prev_hist:
             return None
 
         if signal_action == "BUY":
@@ -65,7 +80,10 @@ class MACDCrossoverStrategy:
             tp = price - atr * self.atr_tp_multiplier
 
         rsi_val = float(tmp.iloc[-1].get("rsi_14", 50)) if "rsi_14" in tmp.columns else 50.0
-        reason = f"MACD crossover {signal_action} | MACD={macd:.5f} Signal={macd_sig:.5f}"
+        reason = (
+            f"MACD crossover {signal_action} | MACD={macd:.5f} Signal={macd_sig:.5f} "
+            f"Hist={hist:.5f} | EMA50={ema_50:.5f} EMA200={ema_200:.5f}"
+        )
         logger.info(f"[{self.symbol}] {reason}")
 
         return {
@@ -77,6 +95,7 @@ class MACDCrossoverStrategy:
             "atr": round(atr, 5),
             "rsi": round(rsi_val, 2),
             "strategy": self.name,
+            "strategy_version": self.VERSION,
             "reason": reason,
             "status": "ACTIVE",
         }

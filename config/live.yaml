@@ -1,0 +1,61 @@
+# ============================================================
+# إعدادات التداول الحقيقي (Live Trading)
+# مخاطر محافظة — الحماية أولاً
+# ============================================================
+
+system:
+  name: "ForexAI Trading Platform"
+  version: "0.3.0"
+  mode: "live"
+
+# --- الأدوات المالية (7 أزواج) ---
+instruments:
+  - symbol: "EURUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "GBPUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDJPY"
+    digits: 3
+    pip_value: 0.01
+  - symbol: "XAUUSD"
+    digits: 2
+    pip_value: 0.01
+  - symbol: "AUDUSD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCAD"
+    digits: 5
+    pip_value: 0.0001
+  - symbol: "USDCHF"
+    digits: 5
+    pip_value: 0.0001
+
+# --- الإطار الزمني ---
+timeframes:
+  primary: "H1"
+  secondary: "H4"
+  confirmation: "M15"
+
+# --- إدارة المخاطر (محافظة — حماية رأس المال) ---
+risk:
+  max_risk_per_trade: 0.005    # 0.5% per trade (نصف Paper)
+  max_daily_drawdown: 0.05     # 5% drawdown limit — مفعّل!
+  max_daily_loss: 0.02         # 2% daily loss limit — مفعّل!
+  max_open_positions: 5        # أقل من Paper
+  max_correlated_positions: 2  # أكثر تحفظاً
+  max_total_risk: 0.02         # 2% portfolio risk (أقل من Paper)
+  min_sl_atr_multiplier: 1.5
+
+# --- جلب البيانات ---
+data:
+  history_bars: 1000
+  update_interval_seconds: 5
+
+# --- التسجيل ---
+logging:
+  level: "INFO"
+  file: "data/logs/system.log"
+  rotation: "10 MB"
+  retention: "30 days"

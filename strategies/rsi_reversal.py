@@ -1,7 +1,7 @@
 """
-استراتيجية انعكاس RSI — RSI Reversal Strategy
-شراء عند RSI < 35 مع بداية ارتداد، بيع عند RSI > 65 مع بداية انخفاض
-استراتيجية عدوانية لجمع بيانات التدريب
+استراتيجية انعكاس RSI — RSI Reversal Strategy v1.1
+IMP-65: 2-bar RSI confirmation + price direction check
+شراء عند RSI < oversold مع ارتداد مؤكد لشريطين، بيع عند RSI > overbought مع انخفاض لشريطين
 """
 import json
 import pandas as pd
@@ -10,7 +10,8 @@ from features.technical.indicators import add_rsi, add_atr
 
 
 class RSIReversalStrategy:
-    """RSI Reversal — buy oversold, sell overbought."""
+    """RSI Reversal v1.1 — 2-bar confirmation + price direction check."""
+    VERSION = "1.1"
 
     def __init__(
         self,
@@ -40,28 +41,35 @@ class RSIReversalStrategy:
         atr_col = f"atr_{self.atr_period}"
 
         clean = tmp.dropna(subset=[rsi_col, atr_col])
-        if len(clean) < 3:
+        if len(clean) < 4:
             return None
 
         curr = clean.iloc[-1]
         prev = clean.iloc[-2]
+        prev2 = clean.iloc[-3]
 
         rsi = float(curr[rsi_col])
         rsi_prev = float(prev[rsi_col])
+        rsi_2bars = float(prev2[rsi_col])
         atr = float(curr[atr_col])
         price = float(curr["close"])
+        prev_close = float(prev["close"])
 
         signal_action = None
 
-        # BUY: RSI was oversold and is turning up
-        if rsi < self.oversold and rsi > rsi_prev:
+        # IMP-65: 2-bar RSI confirmation (RSI turning for 2 consecutive bars)
+        if rsi < self.oversold and rsi > rsi_prev and rsi_prev > rsi_2bars:
             signal_action = "BUY"
-
-        # SELL: RSI was overbought and is turning down
-        elif rsi > self.overbought and rsi < rsi_prev:
+        elif rsi > self.overbought and rsi < rsi_prev and rsi_prev < rsi_2bars:
             signal_action = "SELL"
 
         if signal_action is None:
+            return None
+
+        # IMP-65: Price must confirm reversal direction
+        if signal_action == "BUY" and price < prev_close:
+            return None
+        if signal_action == "SELL" and price > prev_close:
             return None
 
         if signal_action == "BUY":
@@ -71,7 +79,10 @@ class RSIReversalStrategy:
             sl = price + atr * self.atr_sl_multiplier
             tp = price - atr * self.atr_tp_multiplier
 
-        reason = f"RSI reversal {signal_action} | RSI={rsi:.1f} (prev={rsi_prev:.1f})"
+        reason = (
+            f"RSI reversal {signal_action} | RSI={rsi:.1f} "
+            f"(prev={rsi_prev:.1f}, 2bars={rsi_2bars:.1f}) price_confirm=yes"
+        )
         logger.info(f"[{self.symbol}] {reason}")
 
         return {
@@ -83,6 +94,7 @@ class RSIReversalStrategy:
             "atr": round(atr, 5),
             "rsi": round(rsi, 2),
             "strategy": self.name,
+            "strategy_version": self.VERSION,
             "reason": reason,
             "status": "ACTIVE",
         }
