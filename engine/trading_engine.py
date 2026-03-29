@@ -980,6 +980,11 @@ class TradingEngine:
             symbol=trade.symbol, action=trade.order_type,
             pnl=pnl, pnl_pips=round(pnl_pips, 1),
             exit_reason=exit_reason, ticket=trade.ticket,
+            duration_minutes=duration_minutes,
+            strategy=trade.strategy,
+            strategy_version=trade.strategy_version,
+            rr_planned=rr_planned,
+            rr_actual=rr_actual,
         )
 
     def run_once(self) -> tuple[list[dict], list[dict]]:

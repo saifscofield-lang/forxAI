@@ -15,6 +15,7 @@ class TelegramNotifier:
         self.token = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
         self.enabled = bool(self.token and self.chat_id)
+        self._last_trailing_phase = {}  # {ticket: phase} — only notify on phase change
 
         if not self.enabled:
             logger.warning("Telegram not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env)")
@@ -46,15 +47,32 @@ class TelegramNotifier:
         """Notify: trade was executed."""
         conf = f"{signal['ml_confidence']:.0%}" if signal.get("ml_confidence") else "—"
         strategy = signal.get("strategy", "?").replace("_", " ").title()
+        version = signal.get("strategy_version", "")
+        ver_text = f" v{version}" if version else ""
+
+        # Calculate planned R:R
+        rr_text = "—"
+        try:
+            price = signal["price"]
+            sl = signal["stop_loss"]
+            tp = signal["take_profit"]
+            risk = abs(price - sl)
+            reward = abs(tp - price)
+            if risk > 0:
+                rr_text = f"1:{reward/risk:.1f}"
+        except (KeyError, ZeroDivisionError):
+            pass
+
         msg = (
             f"🟢 <b>صفقة جديدة</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📊 <b>{signal['symbol']}</b> | {signal['action']}\n"
-            f"📋 الاستراتيجية: {strategy}\n"
+            f"📋 الاستراتيجية: {strategy}{ver_text}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💰 سعر الدخول: <code>{signal['price']:.5f}</code>\n"
             f"🛑 وقف الخسارة: <code>{signal['stop_loss']:.5f}</code>\n"
             f"🎯 جني الأرباح: <code>{signal['take_profit']:.5f}</code>\n"
+            f"📐 R:R المخطط: {rr_text}\n"
             f"🤖 ثقة ML: {conf}\n"
         )
         if ticket:
@@ -74,7 +92,9 @@ class TelegramNotifier:
         self.send(msg)
 
     def trade_closed(self, symbol: str, action: str, pnl: float, pnl_pips: float,
-                     exit_reason: str, ticket: int = None):
+                     exit_reason: str, ticket: int = None, duration_minutes: int = None,
+                     strategy: str = None, strategy_version: str = None,
+                     rr_planned: float = None, rr_actual: float = None):
         """Notify: trade was closed."""
         if pnl > 0:
             icon = "🟢"
@@ -85,11 +105,33 @@ class TelegramNotifier:
         else:
             icon = "⚪"
             result_text = "تعادل"
+
+        # Duration
+        dur_text = ""
+        if duration_minutes is not None:
+            hours = duration_minutes // 60
+            mins = duration_minutes % 60
+            dur_text = f"\n⏱ مدة الاحتفاظ: {hours}h {mins}m"
+
+        # Strategy info
+        strat_text = ""
+        if strategy:
+            ver = f" v{strategy_version}" if strategy_version else ""
+            strat_text = f"\n📋 الاستراتيجية: {strategy.replace('_', ' ').title()}{ver}"
+
+        # R:R
+        rr_text = ""
+        if rr_planned is not None or rr_actual is not None:
+            planned = f"1:{rr_planned:.1f}" if rr_planned else "—"
+            actual = f"1:{rr_actual:.1f}" if rr_actual else "—"
+            rr_text = f"\n📐 R:R: مخطط {planned} | فعلي {actual}"
+
         msg = (
             f"{icon} <b>إغلاق صفقة — {result_text}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📊 <b>{symbol}</b> | {action}\n"
-            f"💵 الربح/الخسارة: <code>${pnl:+.2f}</code> ({pnl_pips:+.1f} نقطة)\n"
+            f"💵 الربح/الخسارة: <code>${pnl:+.2f}</code> ({pnl_pips:+.1f} نقطة)"
+            f"{strat_text}{rr_text}{dur_text}\n"
             f"📝 سبب الخروج: {exit_reason}\n"
         )
         if ticket:
@@ -271,7 +313,13 @@ class TelegramNotifier:
 
     def position_trailing(self, ticket, symbol, action, phase, old_sl, new_sl,
                           current_price, current_tp, digits):
-        """Notify: trailing stop updated."""
+        """Notify: trailing stop updated — only on phase change to reduce noise."""
+        # Only send notification when phase changes for this ticket
+        last_phase = self._last_trailing_phase.get(ticket)
+        if last_phase == phase:
+            return  # Same phase, skip notification
+        self._last_trailing_phase[ticket] = phase
+
         icon = "📈" if action == "BUY" else "📉"
         msg = (
             f"{icon} <b>تريلنج ستوب</b>\n"

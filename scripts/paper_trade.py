@@ -32,11 +32,16 @@ from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.ml_direct_strategy import MLDirectStrategy
 from storage.database import init_db
 from news.news_filter import NewsFilter
+from observability.telegram_commands import (
+    TelegramCommandHandler, generate_daily_report,
+    generate_weekly_report, check_loss_alert,
+)
 
 
 # -- Globals --
 engine: TradingEngine = None
 scheduler: BlockingScheduler = None
+cmd_handler: TelegramCommandHandler = None
 scan_count = 0
 
 
@@ -140,6 +145,11 @@ def scan_and_trade():
 
     if not _is_market_open():
         logger.info("Market closed (weekend) - skipping scan")
+        return
+
+    # Check if paused via Telegram /pause command
+    if cmd_handler and cmd_handler.is_paused:
+        logger.info("Trading paused via /pause command - skipping scan")
         return
 
     scan_count += 1
@@ -315,6 +325,8 @@ def monitor_positions():
 def shutdown(signum=None, frame=None):
     """Graceful shutdown."""
     logger.info("Shutting down paper trading...")
+    if cmd_handler:
+        cmd_handler.stop()
     if engine:
         engine.notifier.bot_stopped()
     if scheduler and scheduler.running:
@@ -483,6 +495,12 @@ def main():
     # Telegram notification: bot started
     engine.notifier.bot_started(account, symbols, [])
 
+    # -- Start Telegram command handler (interactive commands) --
+    global cmd_handler
+    cmd_handler = TelegramCommandHandler(engine=engine)
+    cmd_handler.start()
+    logger.info("Telegram commands active: /status /positions /performance /pause /resume")
+
     # -- Register shutdown handler --
     sig.signal(sig.SIGINT, shutdown)
     sig.signal(sig.SIGTERM, shutdown)
@@ -517,6 +535,47 @@ def main():
             trigger=CronTrigger(minute="*/5"),
             id="monitor_positions",
             name="Position Monitor",
+            misfire_grace_time=60,
+        )
+
+        # Daily report at 23:00 UTC
+        def _send_daily_report():
+            if engine and engine.running:
+                report = generate_daily_report(engine)
+                engine.notifier.send(report)
+
+        scheduler.add_job(
+            _send_daily_report,
+            trigger=CronTrigger(hour=23, minute=0),
+            id="daily_report",
+            name="Daily Report",
+            misfire_grace_time=300,
+        )
+
+        # Weekly report — Sunday at 23:30 UTC
+        def _send_weekly_report():
+            if engine and engine.running:
+                report = generate_weekly_report(engine)
+                engine.notifier.send(report)
+
+        scheduler.add_job(
+            _send_weekly_report,
+            trigger=CronTrigger(day_of_week="sun", hour=23, minute=30),
+            id="weekly_report",
+            name="Weekly Report",
+            misfire_grace_time=300,
+        )
+
+        # Loss alert check every hour
+        def _check_loss():
+            if engine and engine.running:
+                check_loss_alert(engine, threshold=-500.0)
+
+        scheduler.add_job(
+            _check_loss,
+            trigger=CronTrigger(minute="30"),
+            id="loss_alert",
+            name="Loss Alert Check",
             misfire_grace_time=60,
         )
 
