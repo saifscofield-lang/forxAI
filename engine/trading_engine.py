@@ -19,9 +19,11 @@ from storage.database import (
 )
 from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
+from features.regime_detector import detect_regime, get_current_regime, is_strategy_compatible
+from engine.circuit_breaker import CircuitBreaker
 
 
-ENGINE_VERSION = "2.2"  # IMP-27: auto config selection + IMP-62-65 strategy versioning
+ENGINE_VERSION = "2.3"  # Strategy Lab: regime detection, circuit breaker, scoring
 ML_TRAINING_THRESHOLD = 200  # Minimum closed trades needed for ML training
 
 
@@ -59,6 +61,8 @@ class TradingEngine:
         self.news_filter = None
         self.scan_count = 0
         self._ml_ready_notified = False  # Track if we already sent ML-ready notification
+        self.circuit_breaker = CircuitBreaker()
+        self._regime_cache = {}  # {symbol: {regime, timestamp}}
 
         # Hybrid Monitor: per-position state tracking (loaded from DB on start)
         # {ticket: {"phase": int, "tp1_closed": bool, "original_volume": float, "original_tp": float, "entry_atr": float}}
@@ -209,11 +213,37 @@ class TradingEngine:
             except Exception:
                 pass
 
+            # ── Detect market regime ──
+            current_regime = None
+            try:
+                df_regime = df_h4.copy() if not df_h4.empty else df_h1.copy()
+                regime_info = get_current_regime(df_regime)
+                current_regime = regime_info.get("regime", "TRANSITIONAL")
+                detail["regime"] = current_regime
+                detail["adx"] = regime_info.get("adx_value")
+                detail["atr_ratio"] = regime_info.get("atr_ratio")
+            except Exception as e:
+                logger.debug(f"[{symbol}] Regime detection failed: {e}")
+                current_regime = "TRANSITIONAL"
+
             # Track all signals from all strategies for this symbol
             symbol_signals = []
 
             for strategy in self.strategies:
                 if hasattr(strategy, "symbol") and strategy.symbol != symbol:
+                    continue
+
+                # ── Circuit Breaker check ──
+                if self.circuit_breaker.is_frozen(strategy.name, symbol):
+                    detail["rejection_reason"] = f"Circuit breaker: {strategy.name} frozen"
+                    continue
+
+                # ── Regime compatibility check ──
+                regime_target = getattr(strategy, "regime_target", "ANY")
+                if current_regime and not is_strategy_compatible(current_regime, regime_target):
+                    detail["rejection_reason"] = (
+                        f"Regime mismatch: {strategy.name} needs {regime_target}, market is {current_regime}"
+                    )
                     continue
 
                 # Get SMA diagnostic only for strategies with SMA params

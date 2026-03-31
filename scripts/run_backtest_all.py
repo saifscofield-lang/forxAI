@@ -32,6 +32,7 @@ from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.sma_crossover import SMACrossoverStrategy
 from observability.telegram_notifier import TelegramNotifier
+from engine.scoring import compute_score, format_score, grade_from_score
 
 # ML strategies — optional (need trained models)
 try:
@@ -303,7 +304,15 @@ def init_backtest_db():
         expectancy REAL,
         spread_pips REAL,
         risk_per_trade REAL,
-        verdict TEXT DEFAULT 'PENDING'
+        verdict TEXT DEFAULT 'PENDING',
+        score REAL DEFAULT 0,
+        grade TEXT DEFAULT 'F',
+        ev_score REAL,
+        pf_score REAL,
+        dd_score REAL,
+        trades_score REAL,
+        wr_score REAL,
+        fatal_reasons TEXT
     )
     """)
 
@@ -400,9 +409,13 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
     c = conn.cursor()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Verdict based on active profile
+    # Compute score and grade
+    score_breakdown = compute_score(report)
+
+    # Verdict: grade S or A = PASS, B = REVIEW, C/F = FAIL
+    # Also check profile minimums for backwards compatibility
     p = profile or RISK_PROFILES[DEFAULT_PROFILE]
-    passed = (
+    profile_pass = (
         report.total_trades >= p["min_trades"]
         and report.profit_factor >= p["min_profit_factor"]
         and report.max_drawdown_pct <= p["max_drawdown_pct"]
@@ -410,7 +423,12 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
         and report.sharpe_ratio >= p["min_sharpe"]
         and report.total_pnl > 0
     )
-    verdict = "PASS" if passed else "FAIL"
+    if score_breakdown.grade in ("S", "A"):
+        verdict = "PASS"
+    elif score_breakdown.grade == "B" and profile_pass:
+        verdict = "PASS"
+    else:
+        verdict = "FAIL"
 
     c.execute("""
     INSERT INTO backtest_runs (
@@ -420,8 +438,9 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
         win_rate, profit_factor, sharpe_ratio, max_drawdown_pct, max_drawdown_dollar,
         avg_win, avg_loss, avg_pnl_per_trade, avg_win_pips, avg_loss_pips,
         avg_trade_bars, max_consecutive_wins, max_consecutive_losses, expectancy,
-        spread_pips, risk_per_trade, verdict
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        spread_pips, risk_per_trade, verdict,
+        score, grade, ev_score, pf_score, dd_score, trades_score, wr_score, fatal_reasons
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         run_id, now, result.symbol, result.timeframe, result.strategy,
         result.strategy_version, str(result.start_date), str(result.end_date),
@@ -435,6 +454,10 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
         report.avg_win_pips, report.avg_loss_pips, report.avg_trade_bars,
         report.max_consecutive_wins, report.max_consecutive_losses,
         report.expectancy, spread_pips, risk_per_trade, verdict,
+        score_breakdown.total_score, score_breakdown.grade,
+        score_breakdown.ev_score, score_breakdown.pf_score,
+        score_breakdown.dd_score, score_breakdown.trades_score,
+        score_breakdown.wr_score, "; ".join(score_breakdown.fatal_reasons) if score_breakdown.fatal_reasons else None,
     ))
 
     for t in result.trades:
@@ -459,7 +482,7 @@ def save_results(run_id: str, result: BacktestResult, report, spread_pips: float
 
     conn.commit()
     conn.close()
-    return verdict
+    return verdict, score_breakdown
 
 
 def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFILE):
@@ -470,7 +493,8 @@ def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFI
     c.execute("""
         SELECT symbol, strategy, strategy_version, timeframe,
                total_trades, win_rate, profit_factor, total_pnl,
-               max_drawdown_pct, sharpe_ratio, verdict
+               max_drawdown_pct, sharpe_ratio, verdict,
+               COALESCE(score, 0), COALESCE(grade, '?')
         FROM backtest_runs
         WHERE verdict = 'PASS'
         AND id IN (
@@ -478,7 +502,7 @@ def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFI
             WHERE verdict = 'PASS'
             GROUP BY symbol, strategy, strategy_version, timeframe
         )
-        ORDER BY symbol, strategy
+        ORDER BY score DESC, symbol, strategy
     """)
     rows = c.fetchall()
     conn.close()
@@ -499,7 +523,10 @@ def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFI
         "approved": {},
     }
 
-    for symbol, strategy, version, tf, trades, wr, pf, pnl, dd, sharpe, verdict in rows:
+    for row in rows:
+        symbol, strategy, version, tf, trades, wr, pf, pnl, dd, sharpe, verdict = row[:11]
+        score = row[11] if len(row) > 11 else 0
+        grade = row[12] if len(row) > 12 else "?"
         key = f"{symbol}_{strategy}"
         approved["approved"][key] = {
             "symbol": symbol,
@@ -512,6 +539,8 @@ def generate_approved_yaml(master_run_id: str, profile_name: str = DEFAULT_PROFI
             "total_pnl": round(pnl, 2),
             "max_drawdown_pct": round(dd, 1),
             "sharpe": round(sharpe, 3),
+            "score": round(score, 1),
+            "grade": grade,
         }
 
     with open(APPROVED_PATH, "w", encoding="utf-8") as f:
@@ -749,7 +778,7 @@ def main():
                 report = compute_metrics(result)
 
                 test_run_id = f"{master_run_id}_{symbol}_{tf}_{strategy.name}"
-                verdict = save_results(test_run_id, result, report, spread, risk_per_trade, profile)
+                verdict, score_bd = save_results(test_run_id, result, report, spread, risk_per_trade, profile)
                 elapsed = _time.time() - test_start
 
                 completed += 1
@@ -763,15 +792,17 @@ def main():
                     f"[{completed}/{total_tests}] {icon} {symbol}/{tf} {strategy.name} v{strategy.VERSION} | "
                     f"{report.total_trades} trades | WR {report.win_rate:.0f}% | "
                     f"PF {report.profit_factor:.2f} | ${report.total_pnl:+,.0f} | "
-                    f"DD {report.max_drawdown_pct:.1f}% | {elapsed:.0f}s | {verdict}"
+                    f"DD {report.max_drawdown_pct:.1f}% | [{score_bd.grade}]{score_bd.total_score:.0f} | "
+                    f"{elapsed:.0f}s | {verdict}"
                 )
                 logger.info(log_msg)
                 log_event(master_run_id, "RESULT", log_msg)
 
                 print(format_report(report, result))
+                print(format_score(score_bd))
                 print()
 
-                all_results.append((symbol, tf, strategy.name, strategy.VERSION, result, report, verdict))
+                all_results.append((symbol, tf, strategy.name, strategy.VERSION, result, report, verdict, score_bd))
 
     total_elapsed = _time.time() - global_start
 
@@ -781,16 +812,24 @@ def main():
         print("=" * 100)
         print("     COMBINED SUMMARY")
         print("=" * 100)
-        print(f"  {'Symbol':<10} {'TF':<5} {'Strategy':<20} {'Ver':<5} {'Trades':>6} {'WR%':>6} {'PF':>7} {'P&L':>12} {'DD%':>7} {'Sharpe':>7} {'Result':>8}")
-        print("-" * 100)
+        print(f"  {'Symbol':<10} {'TF':<5} {'Strategy':<20} {'Ver':<5} {'Trades':>6} {'WR%':>6} {'PF':>7} {'P&L':>12} {'DD%':>7} {'Score':>6} {'Grade':>6} {'Result':>8}")
+        print("-" * 110)
 
         total_pnl = 0
         total_trades = 0
-        total_wins = 0
 
-        for symbol, tf, strat_name, version, result, report_or_cache, verdict in all_results:
+        for entry in all_results:
+            # Handle both 7-element (cached) and 8-element (fresh) tuples
+            if len(entry) == 8:
+                symbol, tf, strat_name, version, result, report_or_cache, verdict, score_bd = entry
+                score_val = score_bd.total_score if score_bd else 0
+                grade_val = score_bd.grade if score_bd else "?"
+            else:
+                symbol, tf, strat_name, version, result, report_or_cache, verdict = entry
+                score_val = 0
+                grade_val = "?"
+
             icon = "+" if verdict == "PASS" else "-"
-            # Handle both fresh report (PerformanceReport) and cached dict
             if isinstance(report_or_cache, dict):
                 r = report_or_cache
                 trades = r["total_trades"]
@@ -798,8 +837,7 @@ def main():
                 pf = r["profit_factor"]
                 pnl = r["total_pnl"]
                 dd = r["max_drawdown_pct"]
-                sharpe = r["sharpe_ratio"]
-                cached = " ⏭"
+                cached = " (cached)"
             else:
                 r = report_or_cache
                 trades = r.total_trades
@@ -807,7 +845,6 @@ def main():
                 pf = r.profit_factor
                 pnl = r.total_pnl
                 dd = r.max_drawdown_pct
-                sharpe = r.sharpe_ratio
                 cached = ""
             total_pnl += pnl
             total_trades += trades
@@ -815,8 +852,8 @@ def main():
                 f"  {symbol:<10} {tf:<5} {strat_name:<20} {version:<5} "
                 f"{trades:>6} {wr:>5.1f}% "
                 f"{pf:>7.3f} ${pnl:>+10,.2f} "
-                f"{dd:>6.1f}% {sharpe:>7.3f} "
-                f"  [{icon} {verdict}]{cached}"
+                f"{dd:>6.1f}% {score_val:>5.1f} "
+                f"  [{grade_val}] [{icon} {verdict}]{cached}"
             )
 
         print("-" * 100)
@@ -843,7 +880,13 @@ def main():
 
     if all_results:
         result_lines.append("━━ <b>النتائج</b> ━━")
-        for symbol, tf, strat_name, version, result, report_or_cache, verdict in all_results:
+        for entry in all_results:
+            if len(entry) == 8:
+                symbol, tf, strat_name, version, result, report_or_cache, verdict, score_bd = entry
+                grade_str = f" [{score_bd.grade}]{score_bd.total_score:.0f}" if score_bd else ""
+            else:
+                symbol, tf, strat_name, version, result, report_or_cache, verdict = entry
+                grade_str = ""
             icon = "✅" if verdict == "PASS" else "❌"
             if isinstance(report_or_cache, dict):
                 r = report_or_cache
@@ -851,7 +894,7 @@ def main():
             else:
                 trades, wr, pf, pnl = report_or_cache.total_trades, report_or_cache.win_rate, report_or_cache.profit_factor, report_or_cache.total_pnl
             result_lines.append(
-                f"  {icon} {symbol}/{tf} {strat_name} v{version}\n"
+                f"  {icon} {symbol}/{tf} {strat_name} v{version}{grade_str}\n"
                 f"    {trades} صفقة | WR {wr:.0f}% | "
                 f"PF {pf:.2f} | ${pnl:+,.0f}"
             )

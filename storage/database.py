@@ -381,6 +381,105 @@ class MonitorState(Base):
     updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Strategy Lab Tables
+# ══════════════════════════════════════════════════════════════════════
+
+class RegimeLog(Base):
+    """سجل أنظمة السوق المكتشفة — لتتبع تبديل الاستراتيجيات حسب النظام."""
+    __tablename__ = "regime_logs"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    time              = Column(DateTime, default=datetime.utcnow)
+    symbol            = Column(String(20), nullable=False)
+    timeframe         = Column(String(10), default="H4")
+    detected_regime   = Column(String(20))           # TRENDING_BULL/TRENDING_BEAR/RANGING/VOLATILE/TRANSITIONAL
+    adx_value         = Column(Float, nullable=True)
+    atr_ratio         = Column(Float, nullable=True)  # current ATR / avg ATR
+    bb_width          = Column(Float, nullable=True)
+    active_strategies = Column(Text, nullable=True)   # JSON list
+    action_taken      = Column(String(200), nullable=True)
+
+    __table_args__ = (
+        Index("ix_regime_symbol_time", "symbol", "time"),
+    )
+
+
+class StrategyScorecard(Base):
+    """بطاقة تقييم شاملة لكل استراتيجية — للتصنيف والمقارنة."""
+    __tablename__ = "strategy_scorecards"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    strategy_id       = Column(String(50), nullable=False)    # e.g. "LIQ-SHS-v2.1-RANGING"
+    strategy_name     = Column(String(50), nullable=False)
+    strategy_version  = Column(String(10))
+    symbol            = Column(String(20), nullable=False)
+    timeframe         = Column(String(10))
+    regime_target     = Column(String(20), nullable=True)
+    score             = Column(Float, default=0.0)            # 0-100
+    grade             = Column(String(1))                     # S/A/B/C/F
+    ev_score          = Column(Float, nullable=True)          # Expected Value component
+    pf_score          = Column(Float, nullable=True)          # Profit Factor component
+    dd_score          = Column(Float, nullable=True)          # Drawdown component
+    trades_score      = Column(Float, nullable=True)
+    wr_score          = Column(Float, nullable=True)
+    sharpe            = Column(Float, nullable=True)
+    calmar            = Column(Float, nullable=True)
+    consistency_pct   = Column(Float, nullable=True)          # % profitable months
+    regime_accuracy   = Column(Float, nullable=True)
+    oos_profit_factor = Column(Float, nullable=True)          # out-of-sample PF
+    status            = Column(String(20), default="CANDIDATE")  # CANDIDATE/ACTIVE/FROZEN/RETIRED
+    frozen_reason     = Column(String(200), nullable=True)
+    created_at        = Column(DateTime, default=datetime.utcnow)
+    updated_at        = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_scorecard_strategy_symbol", "strategy_name", "symbol"),
+    )
+
+
+class StrategyLineage(Base):
+    """سجل تطور الاستراتيجيات — لتتبع العلاقة بين النسخ."""
+    __tablename__ = "strategy_lineage"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    parent_id         = Column(String(50), nullable=False)
+    child_id          = Column(String(50), nullable=False)
+    evolution_type    = Column(String(20))                    # OPTIMIZE/MUTATE/MERGE/REDESIGN
+    score_before      = Column(Float, nullable=True)
+    score_after       = Column(Float, nullable=True)
+    created_at        = Column(DateTime, default=datetime.utcnow)
+
+
+class RejectedArchive(Base):
+    """أرشيف الاستراتيجيات المرفوضة — للتعلم من الأخطاء."""
+    __tablename__ = "rejected_archive"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    strategy_id       = Column(String(50), nullable=False)
+    strategy_name     = Column(String(50))
+    rejection_reason  = Column(String(200))
+    failure_mode      = Column(String(100), nullable=True)
+    lesson_learned    = Column(Text, nullable=True)
+    final_score       = Column(Float, nullable=True)
+    final_grade       = Column(String(1), nullable=True)
+    archived_at       = Column(DateTime, default=datetime.utcnow)
+
+
+class CircuitBreakerLog(Base):
+    """سجل قاطع الدائرة — لتتبع تجميد وإلغاء تجميد الاستراتيجيات."""
+    __tablename__ = "circuit_breaker_logs"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    time              = Column(DateTime, default=datetime.utcnow)
+    strategy_name     = Column(String(50), nullable=False)
+    symbol            = Column(String(20), nullable=False)
+    trigger_type      = Column(String(30))                    # CONSECUTIVE_LOSSES/NEGATIVE_EV/MAX_DRAWDOWN
+    trigger_value     = Column(String(100), nullable=True)    # the actual value that triggered
+    action            = Column(String(20))                    # FREEZE/UNFREEZE/RETIRE
+    details           = Column(Text, nullable=True)
+
+
 def init_db():
     """إنشاء جداول قاعدة البيانات"""
     os.makedirs("data", exist_ok=True)
