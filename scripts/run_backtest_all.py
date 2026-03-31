@@ -31,6 +31,8 @@ from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.sma_crossover import SMACrossoverStrategy
+from strategies.stop_hunt_reversal import StopHuntReversalStrategy
+from strategies.asia_breakout import AsiaBreakoutStrategy
 from observability.telegram_notifier import TelegramNotifier
 from engine.scoring import compute_score, format_score, grade_from_score
 
@@ -195,6 +197,8 @@ def preflight_check(config_path: str = "config/base.yaml") -> bool:
         "rsi_reversal": ("RSIReversalStrategy", True),
         "macd_crossover": ("MACDCrossoverStrategy", True),
         "bollinger_bounce": ("BollingerBounceStrategy", True),
+        "stop_hunt_reversal": ("StopHuntReversalStrategy", True),
+        "asia_breakout": ("AsiaBreakoutStrategy", True),
         "ml_direct": ("MLDirectStrategy", ML_DIRECT_AVAILABLE),
         "ml_filtered_sma": ("MLFilteredStrategy", ML_FILTERED_AVAILABLE),
     }
@@ -587,6 +591,16 @@ def create_all_strategies(symbol: str, config: dict):
         BollingerBounceStrategy(
             symbol=symbol,
             atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        ),
+        StopHuntReversalStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+            pip_value=0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001,
+        ),
+        AsiaBreakoutStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+            pip_value=0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001,
         ),
     ]
 

@@ -6,6 +6,7 @@
 import pandas as pd
 from loguru import logger
 from features.technical.indicators import add_sma, add_rsi, add_atr
+from strategies.filters import passes_atr_filter
 
 
 class SMACrossoverStrategy:
@@ -53,6 +54,10 @@ class SMACrossoverStrategy:
 
         # Need at least slow_period + 1 bars
         if len(df) < self.slow_period + 2:
+            return None
+
+        # STAT-003: ATR regime filter — skip low volatility
+        if not passes_atr_filter(df, atr_col, threshold=1.5):
             return None
 
         # Drop NaN rows for indicator columns

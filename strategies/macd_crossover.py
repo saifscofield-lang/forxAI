@@ -6,6 +6,7 @@ IMP-63: EMA50/200 trend confirmation + histogram momentum filter
 import pandas as pd
 from loguru import logger
 from features.technical.indicators import add_macd, add_atr, add_ema
+from strategies.filters import passes_atr_filter
 
 
 class MACDCrossoverStrategy:
@@ -35,6 +36,10 @@ class MACDCrossoverStrategy:
         atr_col = f"atr_{self.atr_period}"
         clean = tmp.dropna(subset=["macd_line", "macd_signal", "macd_hist", atr_col, "ema_50", "ema_200"])
         if len(clean) < 2:
+            return None
+
+        # STAT-003: ATR regime filter — MACD works best in high volatility
+        if not passes_atr_filter(clean, atr_col, threshold=1.5):
             return None
 
         curr = clean.iloc[-1]

@@ -6,6 +6,7 @@ IMP-64: Bounce confirmation (prev outside → curr inside) + RSI 40/60 + BB widt
 import pandas as pd
 from loguru import logger
 from features.technical.indicators import add_bollinger_bands, add_atr, add_rsi
+from strategies.filters import passes_atr_filter
 
 
 class BollingerBounceStrategy:
@@ -38,6 +39,10 @@ class BollingerBounceStrategy:
         atr_col = f"atr_{self.atr_period}"
         clean = tmp.dropna(subset=["bb_upper", "bb_lower", atr_col, "rsi_14"])
         if len(clean) < 20:
+            return None
+
+        # STAT-003: ATR regime filter (lower threshold for mean-reversion)
+        if not passes_atr_filter(clean, atr_col, threshold=1.0):
             return None
 
         curr = clean.iloc[-1]

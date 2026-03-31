@@ -7,6 +7,7 @@ import json
 import pandas as pd
 from loguru import logger
 from features.technical.indicators import add_rsi, add_atr
+from strategies.filters import passes_atr_filter
 
 
 class RSIReversalStrategy:
@@ -42,6 +43,10 @@ class RSIReversalStrategy:
 
         clean = tmp.dropna(subset=[rsi_col, atr_col])
         if len(clean) < 4:
+            return None
+
+        # STAT-003: ATR regime filter
+        if not passes_atr_filter(clean, atr_col, threshold=1.5):
             return None
 
         curr = clean.iloc[-1]
