@@ -30,7 +30,21 @@ from backtest.metrics import compute_metrics, format_report
 from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.bollinger_bounce import BollingerBounceStrategy
+from strategies.sma_crossover import SMACrossoverStrategy
 from observability.telegram_notifier import TelegramNotifier
+
+# ML strategies — optional (need trained models)
+try:
+    from strategies.ml_direct_strategy import MLDirectStrategy
+    ML_DIRECT_AVAILABLE = True
+except ImportError:
+    ML_DIRECT_AVAILABLE = False
+
+try:
+    from strategies.ml_filtered_strategy import MLFilteredStrategy
+    ML_FILTERED_AVAILABLE = True
+except ImportError:
+    ML_FILTERED_AVAILABLE = False
 
 DB_PATH = "data/backtest_results.db"
 APPROVED_PATH = "data/backtest_approved.yaml"
@@ -64,6 +78,189 @@ RISK_PROFILES = {
 }
 
 DEFAULT_PROFILE = "moderate"
+
+# ── All available strategy names ──
+ALL_STRATEGY_NAMES = [
+    "sma_crossover", "rsi_reversal", "macd_crossover", "bollinger_bounce",
+    "ml_direct", "ml_filtered_sma",
+]
+
+
+def preflight_check(config_path: str = "config/base.yaml") -> bool:
+    """
+    فحص المتطلبات قبل تشغيل الباك تست
+    Check all requirements before running backtest. Returns True if ready.
+    """
+    print()
+    print("=" * 60)
+    print("     PRE-FLIGHT CHECK")
+    print("=" * 60)
+
+    errors = []
+    warnings = []
+
+    # 1. Check required packages
+    print("\n  [1/5] Checking packages...")
+    required_packages = {
+        "pandas": "pandas",
+        "numpy": "numpy",
+        "yaml": "pyyaml",
+        "loguru": "loguru",
+        "dotenv": "python-dotenv",
+        "sqlalchemy": "sqlalchemy",
+    }
+    for import_name, pip_name in required_packages.items():
+        try:
+            __import__(import_name)
+            print(f"        [OK] {pip_name}")
+        except ImportError:
+            errors.append(f"Missing package: {pip_name} (pip install {pip_name})")
+            print(f"        [X]  {pip_name} -- NOT INSTALLED")
+
+    # 2. Check config file
+    print("\n  [2/5] Checking config...")
+    if not os.path.exists(config_path):
+        errors.append(f"Config file missing: {config_path}")
+        print(f"        [X]  {config_path} -- NOT FOUND")
+    else:
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+            instruments = config.get("instruments", [])
+            if not instruments:
+                errors.append("No instruments defined in config")
+                print("        [X]  No instruments in config")
+            else:
+                symbols = [i["symbol"] for i in instruments]
+                print(f"        [OK] {config_path} -- {len(instruments)} instruments: {', '.join(symbols)}")
+        except Exception as e:
+            errors.append(f"Config parse error: {e}")
+            print(f"        [X]  Config error: {e}")
+
+    # 3. Check historical data (parquet files)
+    print("\n  [3/5] Checking historical data...")
+    data_dir = "data/raw"
+    if not os.path.exists(data_dir):
+        errors.append(
+            f"No historical data directory: {data_dir}\n"
+            "        -> Run: python scripts/download_historical_data.py"
+        )
+        print(f"        [X]  {data_dir}/ -- NOT FOUND")
+        print("              -> Run: python scripts/download_historical_data.py")
+    else:
+        timeframes_to_check = ["M15", "H1", "H4", "D1"]
+        total_files = 0
+        missing_data = []
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+            instruments = config.get("instruments", [])
+        except Exception:
+            instruments = []
+
+        for inst in instruments:
+            sym = inst["symbol"]
+            sym_dir = os.path.join(data_dir, sym)
+            if not os.path.exists(sym_dir):
+                missing_data.append(f"{sym} (no folder)")
+                continue
+            found_tfs = []
+            for tf in timeframes_to_check:
+                path = os.path.join(sym_dir, f"{tf}.parquet")
+                if os.path.exists(path):
+                    size_mb = os.path.getsize(path) / (1024 * 1024)
+                    found_tfs.append(f"{tf}({size_mb:.1f}MB)")
+                    total_files += 1
+                else:
+                    missing_data.append(f"{sym}/{tf}")
+            if found_tfs:
+                print(f"        [OK] {sym}: {', '.join(found_tfs)}")
+
+        if missing_data:
+            for m in missing_data:
+                print(f"        [!!] {m} -- MISSING")
+            if total_files == 0:
+                errors.append(
+                    "No historical data files found!\n"
+                    "        -> Run: python scripts/download_historical_data.py"
+                )
+            else:
+                warnings.append(f"Missing data for: {', '.join(missing_data)}")
+
+    # 4. Check strategies
+    print("\n  [4/5] Checking strategies...")
+    strategy_status = {
+        "sma_crossover": ("SMACrossoverStrategy", True),
+        "rsi_reversal": ("RSIReversalStrategy", True),
+        "macd_crossover": ("MACDCrossoverStrategy", True),
+        "bollinger_bounce": ("BollingerBounceStrategy", True),
+        "ml_direct": ("MLDirectStrategy", ML_DIRECT_AVAILABLE),
+        "ml_filtered_sma": ("MLFilteredStrategy", ML_FILTERED_AVAILABLE),
+    }
+    available_count = 0
+    for name, (cls_name, available) in strategy_status.items():
+        if available:
+            print(f"        [OK] {name} ({cls_name})")
+            available_count += 1
+        else:
+            print(f"        [!!] {name} ({cls_name}) -- import failed (optional)")
+            warnings.append(f"Strategy {name} not available (missing dependencies)")
+
+    # Check ML models if ML strategies are available
+    if ML_DIRECT_AVAILABLE or ML_FILTERED_AVAILABLE:
+        model_dir = "models/market_learner"
+        if os.path.exists(model_dir):
+            models = [f for f in os.listdir(model_dir) if f.endswith("_model.pkl")]
+            model_symbols = [f.replace("_model.pkl", "") for f in models]
+            print(f"        [OK] ML models: {', '.join(model_symbols)}")
+        else:
+            warnings.append("ML models directory not found -- ML strategies will skip symbols without models")
+            print(f"        [!!] {model_dir}/ -- NOT FOUND (ML strategies need trained models)")
+
+    if available_count == 0:
+        errors.append("No strategies available!")
+
+    # 5. Check backtest engine
+    print("\n  [5/5] Checking backtest engine...")
+    try:
+        from backtest.universal_backtester import UniversalBacktester
+        print("        [OK] UniversalBacktester")
+    except ImportError as e:
+        errors.append(f"Backtest engine import failed: {e}")
+        print(f"        [X]  UniversalBacktester -- {e}")
+    try:
+        from backtest.metrics import compute_metrics, format_report
+        print("        [OK] Metrics module")
+    except ImportError as e:
+        errors.append(f"Metrics import failed: {e}")
+        print(f"        [X]  Metrics -- {e}")
+
+    # -- Summary --
+    print()
+    print("-" * 60)
+    if errors:
+        print(f"  [FAILED] {len(errors)} error(s), {len(warnings)} warning(s)")
+        print()
+        for i, err in enumerate(errors, 1):
+            print(f"  ERROR {i}: {err}")
+        if warnings:
+            print()
+            for w in warnings:
+                print(f"  WARNING: {w}")
+        print()
+        print("  Fix the errors above, then run again.")
+        print("=" * 60)
+        return False
+    else:
+        if warnings:
+            print(f"  [READY] with {len(warnings)} warning(s)")
+            for w in warnings:
+                print(f"     [!!] {w}")
+        else:
+            print("  [OK] ALL CHECKS PASSED -- Ready to backtest!")
+        print("=" * 60)
+        print()
+        return True
 
 
 def init_backtest_db():
@@ -343,7 +540,11 @@ def create_all_strategies(symbol: str, config: dict):
     sl_mult = float(params.get("atr_sl_mult", 2.0))
     tp_mult = float(params.get("atr_tp_mult", 3.0))
 
-    return [
+    strategies = [
+        SMACrossoverStrategy(
+            symbol=symbol,
+            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        ),
         RSIReversalStrategy(
             symbol=symbol, rsi_period=14,
             oversold=30.0, overbought=70.0,
@@ -359,6 +560,35 @@ def create_all_strategies(symbol: str, config: dict):
             atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
         ),
     ]
+
+    # ML Direct — only if available and model exists for this symbol
+    if ML_DIRECT_AVAILABLE:
+        model_path = f"models/market_learner/{symbol}_model.pkl"
+        if os.path.exists(model_path):
+            try:
+                strategies.append(MLDirectStrategy(
+                    symbol=symbol,
+                    atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+                ))
+            except Exception as e:
+                logger.warning(f"Could not load MLDirectStrategy for {symbol}: {e}")
+
+    # ML Filtered SMA — only if available and model exists
+    if ML_FILTERED_AVAILABLE:
+        model_path = f"models/market_learner/{symbol}_model.pkl"
+        if os.path.exists(model_path):
+            try:
+                import pickle
+                with open(model_path, "rb") as f:
+                    model = pickle.load(f)
+                strategies.append(MLFilteredStrategy(
+                    symbol=symbol, model=model,
+                    atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+                ))
+            except Exception as e:
+                logger.warning(f"Could not load MLFilteredStrategy for {symbol}: {e}")
+
+    return strategies
 
 
 def main():
@@ -385,7 +615,14 @@ def main():
                         help="Risk profile: strict, moderate, aggressive")
     parser.add_argument("--force", action="store_true",
                         help="Force re-run all tests (ignore cache)")
+    parser.add_argument("--skip-check", action="store_true",
+                        help="Skip pre-flight checks")
     args = parser.parse_args()
+
+    # ── Pre-flight check ──
+    if not args.skip_check:
+        if not preflight_check():
+            sys.exit(1)
 
     profile_name = args.profile
     profile = RISK_PROFILES[profile_name]
@@ -606,12 +843,17 @@ def main():
 
     if all_results:
         result_lines.append("━━ <b>النتائج</b> ━━")
-        for symbol, tf, strat_name, version, result, report, verdict in all_results:
+        for symbol, tf, strat_name, version, result, report_or_cache, verdict in all_results:
             icon = "✅" if verdict == "PASS" else "❌"
+            if isinstance(report_or_cache, dict):
+                r = report_or_cache
+                trades, wr, pf, pnl = r["total_trades"], r["win_rate"], r["profit_factor"], r["total_pnl"]
+            else:
+                trades, wr, pf, pnl = report_or_cache.total_trades, report_or_cache.win_rate, report_or_cache.profit_factor, report_or_cache.total_pnl
             result_lines.append(
                 f"  {icon} {symbol}/{tf} {strat_name} v{version}\n"
-                f"    {report.total_trades} صفقة | WR {report.win_rate:.0f}% | "
-                f"PF {report.profit_factor:.2f} | ${report.total_pnl:+,.0f}"
+                f"    {trades} صفقة | WR {wr:.0f}% | "
+                f"PF {pf:.2f} | ${pnl:+,.0f}"
             )
 
     result_lines.append("")

@@ -200,7 +200,16 @@ def main():
 
     config = load_config()
     instruments = config.get("instruments", [])
-    timeframe = config.get("timeframes", {}).get("primary", "H1")
+    preferred_tf = config.get("timeframes", {}).get("primary", "H1")
+    # Fallback: if primary timeframe data missing, try H4 then D1
+    timeframe = preferred_tf
+    sample_sym = instruments[0]["symbol"] if instruments else "EURUSD"
+    for tf_candidate in [preferred_tf, "H4", "D1"]:
+        if os.path.exists(f"data/raw/{sample_sym}/{tf_candidate}.parquet"):
+            timeframe = tf_candidate
+            break
+    if timeframe != preferred_tf:
+        logger.info(f"Primary timeframe {preferred_tf} not available, using {timeframe}")
 
     print()
     print("=" * 70)

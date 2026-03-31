@@ -1,56 +1,49 @@
 EURUSD:
-  fast_period: 45
-  slow_period: 120
-  rsi_period: 7
+  fast_period: 50
+  slow_period: 70
+  rsi_period: 28
   atr_period: 28
-  atr_sl_mult: 2.0
-  atr_tp_mult: 3.5
+  atr_sl_mult: 3.0
+  atr_tp_mult: 4.75
 GBPUSD:
-  fast_period: 20
-  slow_period: 90
+  fast_period: 25
+  slow_period: 110
   rsi_period: 7
   atr_period: 21
-  atr_sl_mult: 1.0
-  atr_tp_mult: 5.0
+  atr_sl_mult: 0.75
+  atr_tp_mult: 3.5
 USDJPY:
-  fast_period: 5
-  slow_period: 160
+  fast_period: 35
+  slow_period: 170
   rsi_period: 7
-  atr_period: 14
-  atr_sl_mult: 1.0
-  atr_tp_mult: 5.0
+  atr_period: 21
+  atr_sl_mult: 0.5
+  atr_tp_mult: 3.75
 XAUUSD:
-  fast_period: 40
-  slow_period: 50
-  rsi_period: 21
+  fast_period: 25
+  slow_period: 190
+  rsi_period: 7
   atr_period: 7
-  atr_sl_mult: 1.25
-  atr_tp_mult: 2.75
+  atr_sl_mult: 0.5
+  atr_tp_mult: 1.75
 AUDUSD:
   fast_period: 20
-  slow_period: 50
+  slow_period: 100
   rsi_period: 14
-  atr_period: 14
-  atr_sl_mult: 1.5
-  atr_tp_mult: 2.5
+  atr_period: 21
+  atr_sl_mult: 2.5
+  atr_tp_mult: 1.5
 USDCAD:
-  fast_period: 20
-  slow_period: 50
+  fast_period: 35
+  slow_period: 130
   rsi_period: 14
-  atr_period: 14
-  atr_sl_mult: 1.5
-  atr_tp_mult: 2.5
-NZDUSD:
-  fast_period: 20
-  slow_period: 50
-  rsi_period: 14
-  atr_period: 14
-  atr_sl_mult: 1.5
-  atr_tp_mult: 2.5
+  atr_period: 28
+  atr_sl_mult: 2.0
+  atr_tp_mult: 1.25
 USDCHF:
-  fast_period: 20
-  slow_period: 50
-  rsi_period: 14
-  atr_period: 14
-  atr_sl_mult: 1.5
-  atr_tp_mult: 2.5
+  fast_period: 5
+  slow_period: 130
+  rsi_period: 21
+  atr_period: 28
+  atr_sl_mult: 2.75
+  atr_tp_mult: 3.5

@@ -6,6 +6,7 @@ try:
     import cupy as cp
     GPU_AVAILABLE = True
 except ImportError:
+    import numpy as cp  # fallback so type hints don't break
     GPU_AVAILABLE = False
 
 import numpy as np
