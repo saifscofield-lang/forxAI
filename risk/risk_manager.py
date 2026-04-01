@@ -105,7 +105,7 @@ class RiskManager:
 
         # Clamp to valid MT5 range
         lot_size = max(0.01, round(lot_size, 2))
-        lot_size = min(lot_size, 2.0)
+        lot_size = min(lot_size, 1.0)  # Max 1.0 lot per trade (safety cap)
 
         # IMP-32: Detailed risk logging
         actual_risk = lot_size * stop_loss_pips * pip_cost_per_lot
