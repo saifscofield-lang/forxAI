@@ -562,6 +562,20 @@ def main():
             misfire_grace_time=300,
         )
 
+        # Shadow trading report at 23:15 UTC
+        def _send_shadow_report():
+            if engine and engine.running:
+                report = engine.shadow_tracker.generate_telegram_report()
+                engine.notifier.send(report)
+
+        scheduler.add_job(
+            _send_shadow_report,
+            trigger=CronTrigger(hour=23, minute=15),
+            id="shadow_report",
+            name="Shadow Report",
+            misfire_grace_time=300,
+        )
+
         # Weekly report — Sunday at 23:30 UTC
         def _send_weekly_report():
             if engine and engine.running:

@@ -331,3 +331,107 @@ class ShadowTracker:
         except Exception as e:
             logger.error(f"Shadow stats failed: {e}")
             return {}
+
+    def generate_telegram_report(self) -> str:
+        """Generate a Telegram-formatted shadow trading report."""
+        from sqlalchemy import func
+        try:
+            session = SessionLocal()
+            now = datetime.now(timezone.utc)
+
+            # Total signals today
+            from datetime import timedelta
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            total_today = session.query(ShadowSignal).filter(
+                ShadowSignal.time >= today_start
+            ).count()
+
+            executed_today = session.query(ShadowSignal).filter(
+                ShadowSignal.time >= today_start,
+                ShadowSignal.executed == True,
+            ).count()
+
+            blocked_today = session.query(ShadowSignal).filter(
+                ShadowSignal.time >= today_start,
+                ShadowSignal.executed == False,
+            ).count()
+
+            # Open shadows
+            open_count = session.query(ShadowSignal).filter(
+                ShadowSignal.sim_status == "OPEN"
+            ).count()
+
+            # All-time resolved stats
+            stats = self.get_filter_stats()
+
+            # Per-filter breakdown today
+            filter_today = session.query(
+                ShadowSignal.rejection_reason,
+                func.count(ShadowSignal.id),
+            ).filter(
+                ShadowSignal.time >= today_start,
+                ShadowSignal.executed == False,
+            ).group_by(ShadowSignal.rejection_reason).all()
+
+            # Resolved today
+            resolved_today = session.query(ShadowSignal).filter(
+                ShadowSignal.sim_exit_time >= today_start,
+                ShadowSignal.sim_status != "OPEN",
+            ).all()
+
+            resolved_wins = sum(1 for r in resolved_today if r.label == 1)
+            resolved_losses = sum(1 for r in resolved_today if r.label == 0)
+            resolved_blocked_wins = sum(1 for r in resolved_today if not r.executed and r.label == 1)
+            resolved_blocked_losses = sum(1 for r in resolved_today if not r.executed and r.label == 0)
+
+            session.close()
+
+            # Build message
+            lines = [
+                "<b>Shadow Trading Report</b>",
+                "",
+                "<b>Today:</b>",
+                f"  Signals: {total_today} (Executed: {executed_today} | Blocked: {blocked_today})",
+            ]
+
+            if filter_today:
+                lines.append("  Blocked by:")
+                for reason, count in filter_today:
+                    lines.append(f"    {reason}: {count}")
+
+            if resolved_today:
+                lines.append("")
+                lines.append(f"<b>Resolved today:</b> {len(resolved_today)}")
+                lines.append(f"  TP hit: {resolved_wins} | SL hit: {resolved_losses}")
+                if resolved_blocked_wins or resolved_blocked_losses:
+                    lines.append(f"  Blocked signals:")
+                    lines.append(f"    Would have won: {resolved_blocked_wins}")
+                    lines.append(f"    Would have lost: {resolved_blocked_losses}")
+                    if resolved_blocked_wins + resolved_blocked_losses > 0:
+                        acc = resolved_blocked_losses / (resolved_blocked_wins + resolved_blocked_losses) * 100
+                        lines.append(f"    Filter accuracy today: {acc:.0f}%")
+
+            lines.append("")
+            lines.append(f"<b>All-time:</b>")
+            lines.append(f"  Resolved: {stats.get('total_resolved', 0)}")
+            lines.append(f"  Executed: W{stats.get('executed_wins', 0)} / L{stats.get('executed_losses', 0)}")
+            lines.append(f"  Blocked would win: {stats.get('blocked_would_win', 0)}")
+            lines.append(f"  Blocked would lose: {stats.get('blocked_would_lose', 0)}")
+            lines.append(f"  Filter accuracy: {stats.get('filter_accuracy', 0):.0f}%")
+            lines.append(f"  Open shadows: {open_count}")
+
+            if stats.get("per_filter"):
+                lines.append("")
+                lines.append("<b>Per filter:</b>")
+                for f_name, f_data in stats["per_filter"].items():
+                    total_f = f_data["total"]
+                    wins_f = f_data["would_win"]
+                    acc_f = ((total_f - wins_f) / total_f * 100) if total_f > 0 else 0
+                    lines.append(f"  {f_name}: {total_f} blocked ({acc_f:.0f}% correct)")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Shadow report generation failed: {e}")
+            return f"Shadow report error: {e}"
