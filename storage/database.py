@@ -480,6 +480,63 @@ class CircuitBreakerLog(Base):
     details           = Column(Text, nullable=True)
 
 
+class ShadowSignal(Base):
+    """Shadow Trading — every signal logged whether executed or not.
+    Tracks simulated outcome to measure filter effectiveness and generate ML training data."""
+    __tablename__ = "shadow_signals"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    time              = Column(DateTime, default=datetime.utcnow)
+    symbol            = Column(String(20), nullable=False)
+    timeframe         = Column(String(10), nullable=True)
+    strategy          = Column(String(50), nullable=False)
+    strategy_version  = Column(String(10), nullable=True)
+    action            = Column(String(10), nullable=False)          # BUY / SELL
+
+    # Signal details
+    entry_price       = Column(Float, nullable=False)
+    stop_loss         = Column(Float, nullable=True)
+    take_profit       = Column(Float, nullable=True)
+    atr               = Column(Float, nullable=True)
+    rsi               = Column(Float, nullable=True)
+    reason            = Column(String(300), nullable=True)          # Strategy reason text
+
+    # Execution status
+    executed          = Column(Boolean, default=False)              # Was it actually traded?
+    rejection_reason  = Column(String(200), nullable=True)          # Why rejected (ATR_FILTER, REGIME, CIRCUIT_BREAKER, NEWS, RISK, etc.)
+    rejection_detail  = Column(String(300), nullable=True)          # Detailed context
+
+    # Market context at signal time
+    regime            = Column(String(20), nullable=True)           # TRENDING_BULL/BEAR/RANGING/VOLATILE/TRANSITIONAL
+    adx_value         = Column(Float, nullable=True)
+    atr_ratio         = Column(Float, nullable=True)                # current ATR / avg ATR(20)
+    bb_width          = Column(Float, nullable=True)
+    h4_trend          = Column(String(10), nullable=True)
+    spread            = Column(Float, nullable=True)
+    volatility_regime = Column(String(10), nullable=True)
+
+    # Simulated outcome (filled later by shadow tracker)
+    sim_status        = Column(String(20), default="OPEN")          # OPEN / SL_HIT / TP_HIT / TIMEOUT / ACTIVE
+    sim_exit_price    = Column(Float, nullable=True)
+    sim_exit_time     = Column(DateTime, nullable=True)
+    sim_pnl           = Column(Float, nullable=True)                # Simulated P&L in $
+    sim_pnl_pips      = Column(Float, nullable=True)                # Simulated P&L in pips
+    sim_max_favorable = Column(Float, nullable=True)                # Max favorable excursion (pips)
+    sim_max_adverse   = Column(Float, nullable=True)                # Max adverse excursion (pips)
+    sim_duration_bars = Column(Integer, nullable=True)              # How many bars until resolved
+    sim_exit_reason   = Column(String(20), nullable=True)           # SL_HIT / TP_HIT / TIMEOUT
+
+    # ML training label (computed after resolution)
+    label             = Column(Integer, nullable=True)              # 1=profitable, 0=loss, NULL=unresolved
+    filter_correct    = Column(Boolean, nullable=True)              # Was the filter decision correct?
+
+    __table_args__ = (
+        Index("ix_shadow_symbol_time", "symbol", "time"),
+        Index("ix_shadow_strategy", "strategy", "executed"),
+        Index("ix_shadow_status", "sim_status"),
+    )
+
+
 def init_db():
     """إنشاء جداول قاعدة البيانات"""
     os.makedirs("data", exist_ok=True)

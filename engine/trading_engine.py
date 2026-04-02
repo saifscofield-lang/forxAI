@@ -21,9 +21,10 @@ from observability.telegram_notifier import TelegramNotifier
 from features.technical.indicators import add_sma, add_rsi, add_atr, add_macd, add_bollinger_bands
 from features.regime_detector import detect_regime, get_current_regime, is_strategy_compatible
 from engine.circuit_breaker import CircuitBreaker
+from engine.shadow_tracker import ShadowTracker
 
 
-ENGINE_VERSION = "2.3"  # Strategy Lab: regime detection, circuit breaker, scoring
+ENGINE_VERSION = "2.4"  # Shadow tracking: log all signals for ML training
 ML_TRAINING_THRESHOLD = 200  # Minimum closed trades needed for ML training
 
 
@@ -62,6 +63,7 @@ class TradingEngine:
         self.scan_count = 0
         self._ml_ready_notified = False  # Track if we already sent ML-ready notification
         self.circuit_breaker = CircuitBreaker()
+        self.shadow_tracker = ShadowTracker()
         self._regime_cache = {}  # {symbol: {regime, timestamp}}
 
         # Hybrid Monitor: per-position state tracking (loaded from DB on start)
@@ -226,6 +228,16 @@ class TradingEngine:
                 logger.debug(f"[{symbol}] Regime detection failed: {e}")
                 current_regime = "TRANSITIONAL"
 
+            # ── Build shadow context for this symbol ──
+            shadow_ctx = {
+                "regime": current_regime,
+                "adx_value": detail.get("adx"),
+                "atr_ratio": detail.get("atr_ratio"),
+                "h4_trend": market_ctx.get("h4_trend"),
+                "volatility_regime": market_ctx.get("volatility_regime"),
+                "spread": detail.get("spread"),
+            }
+
             # Track all signals from all strategies for this symbol
             symbol_signals = []
 
@@ -233,25 +245,56 @@ class TradingEngine:
                 if hasattr(strategy, "symbol") and strategy.symbol != symbol:
                     continue
 
-                # ── Circuit Breaker check ──
-                if self.circuit_breaker.is_frozen(strategy.name, symbol):
-                    detail["rejection_reason"] = f"Circuit breaker: {strategy.name} frozen"
-                    continue
-
-                # ── Regime compatibility check ──
-                regime_target = getattr(strategy, "regime_target", "ANY")
-                if current_regime and not is_strategy_compatible(current_regime, regime_target):
-                    detail["rejection_reason"] = (
-                        f"Regime mismatch: {strategy.name} needs {regime_target}, market is {current_regime}"
-                    )
-                    continue
-
                 # Get SMA diagnostic only for strategies with SMA params
                 if hasattr(strategy, "fast_period") and hasattr(strategy, "slow_period"):
                     sma_diag = self._diagnose_sma(df_h1, strategy)
                     detail.update(sma_diag)
 
+                # Generate signal FIRST — before any filtering
                 signal = strategy.generate_signal(df_h1)
+                if not signal:
+                    continue
+
+                # ── Signal generated — now check filters ──
+                rejection_reason = None
+                rejection_detail = None
+
+                # Circuit Breaker check
+                if self.circuit_breaker.is_frozen(strategy.name, symbol):
+                    rejection_reason = "CIRCUIT_BREAKER"
+                    rejection_detail = f"{strategy.name} frozen for {symbol}"
+                    detail["rejection_reason"] = rejection_detail
+
+                # Regime compatibility check
+                if not rejection_reason:
+                    regime_target = getattr(strategy, "regime_target", "ANY")
+                    if current_regime and not is_strategy_compatible(current_regime, regime_target):
+                        rejection_reason = "REGIME_MISMATCH"
+                        rejection_detail = f"{strategy.name} needs {regime_target}, market is {current_regime}"
+                        detail["rejection_reason"] = rejection_detail
+
+                # News filter check
+                if not rejection_reason and news_blocked:
+                    rejection_reason = "NEWS_FILTER"
+                    rejection_detail = news_reason
+
+                # If rejected, log shadow and skip
+                if rejection_reason:
+                    signal["symbol"] = symbol
+                    self.shadow_tracker.log_signal(
+                        signal, executed=False,
+                        rejection_reason=rejection_reason,
+                        rejection_detail=rejection_detail,
+                        context=shadow_ctx,
+                    )
+                    continue
+
+                # ── Signal passed all filters ──
+                # Log to shadow as executed
+                self.shadow_tracker.log_signal(
+                    signal, executed=True, context=shadow_ctx,
+                )
+
                 if signal:
                     detail["signal_generated"] = True
                     detail["signal_action"] = signal["action"]
@@ -305,6 +348,13 @@ class TradingEngine:
 
             self._save_market_context(symbol, market_ctx)
             scan_details.append(detail)
+
+        # ── Resolve open shadow trades ──
+        try:
+            pip_vals = {s: inst.get("pip_value", 0.0001) for s, inst in self.instruments.items()}
+            self.shadow_tracker.resolve_open_shadows(self.adapter, pip_vals)
+        except Exception as e:
+            logger.debug(f"Shadow resolve error: {e}")
 
         return signals, scan_details
 
