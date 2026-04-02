@@ -22,7 +22,7 @@ TRADING_DB = "data/trading.db"
 
 # Phase 1 start date
 PHASE1_START = datetime(2026, 3, 31, tzinfo=timezone.utc)
-PHASE1_PAPER_DAYS = 30
+PHASE1_PAPER_DAYS = 14  # Reduced from 30 — shadow trading covers data collection
 PHASE1_MAX_DEVIATION = 0.15  # 15% paper vs backtest
 
 
