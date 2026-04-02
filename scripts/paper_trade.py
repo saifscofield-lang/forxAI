@@ -30,6 +30,14 @@ from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.ml_direct_strategy import MLDirectStrategy
+from strategies.stop_hunt_reversal import StopHuntReversalStrategy
+from strategies.asia_breakout import AsiaBreakoutStrategy
+
+try:
+    from strategies.ml_filtered_strategy import MLFilteredStrategy
+    ML_FILTERED_AVAILABLE = True
+except ImportError:
+    ML_FILTERED_AVAILABLE = False
 from storage.database import init_db
 from news.news_filter import NewsFilter
 from observability.telegram_commands import (
@@ -60,9 +68,14 @@ def _load_approved():
 
 
 def create_strategies(config):
-    """Create strategies per symbol. If backtest_approved.yaml exists, only enable PASS pairs."""
+    """Create strategies per symbol.
+    Demo/paper mode: load ALL strategies for maximum data collection.
+    Live mode: only load backtest-approved strategies.
+    """
     strategies = []
     approved = _load_approved()
+    trading_mode = os.getenv("TRADING_MODE", "paper").lower()
+    all_mode = trading_mode != "live"  # Demo: load all strategies
 
     try:
         with open("data/optimized_params.yaml", "r") as f:
@@ -76,21 +89,23 @@ def create_strategies(config):
         params = opt_params.get(symbol, {})
         sl_mult = float(params.get("atr_sl_mult", 2.0))
         tp_mult = float(params.get("atr_tp_mult", 3.0))
+        pip_value = 0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001
         added = []
 
-        # ── Check approved list or fallback to defaults ──
         def is_approved(strat_name):
+            if all_mode:
+                return True  # Demo: all strategies enabled
             if approved is None:
-                # No backtest yet — use legacy defaults
-                if strat_name == "rsi_reversal" and symbol in ("XAUUSD", "USDCAD"):
-                    return False
-                if strat_name == "bollinger_bounce":
-                    return False  # IMP-49 default
-                if strat_name == "sma_crossover":
-                    return False  # IMP-03 default
-                return True
-            # Backtest exists — only allow PASS
+                return False
             return f"{symbol}_{strat_name}" in approved
+
+        # SMA Crossover
+        if is_approved("sma_crossover"):
+            strategies.append(SMACrossoverStrategy(
+                symbol=symbol,
+                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+            ))
+            added.append("SMA")
 
         # RSI Reversal
         if is_approved("rsi_reversal"):
@@ -118,6 +133,24 @@ def create_strategies(config):
             ))
             added.append("BB")
 
+        # Stop Hunt Reversal
+        if is_approved("stop_hunt_reversal"):
+            strategies.append(StopHuntReversalStrategy(
+                symbol=symbol,
+                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+                pip_value=pip_value,
+            ))
+            added.append("SH")
+
+        # Asia Breakout
+        if is_approved("asia_breakout"):
+            strategies.append(AsiaBreakoutStrategy(
+                symbol=symbol,
+                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+                pip_value=pip_value,
+            ))
+            added.append("AB")
+
         # ML Direct Strategy
         ml_strat = MLDirectStrategy(
             symbol=symbol, confidence_threshold=0.55,
@@ -127,8 +160,24 @@ def create_strategies(config):
             strategies.append(ml_strat)
             added.append("ML")
 
-        source = "backtest" if approved else "default"
-        logger.info(f"  {symbol}: {len(added)} strategies ({', '.join(added) or 'NONE'}) [{source}]")
+        # ML Filtered Strategy
+        if ML_FILTERED_AVAILABLE and is_approved("ml_filtered_sma"):
+            try:
+                import pickle
+                model_path = f"models/market_learner/{symbol}_model.pkl"
+                if os.path.exists(model_path):
+                    with open(model_path, "rb") as f:
+                        model = pickle.load(f)
+                    strategies.append(MLFilteredStrategy(
+                        symbol=symbol, model=model,
+                        atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+                    ))
+                    added.append("MLF")
+            except Exception:
+                pass
+
+        source = "ALL (demo)" if all_mode else ("backtest" if approved else "default")
+        logger.info(f"  {symbol}: {len(added)} strategies ({', '.join(added)}) [{source}]")
 
     return strategies
 
@@ -601,6 +650,46 @@ def main():
             id="loss_alert",
             name="Loss Alert Check",
             misfire_grace_time=60,
+        )
+
+        # Weekly auto-backtest — Sunday 02:00 UTC (market closed)
+        def _weekly_backtest():
+            if not engine or not engine.running:
+                return
+            try:
+                logger.info("[WEEKLY] Starting auto-backtest...")
+                engine.notifier.send("<b>Weekly Auto-Backtest Starting...</b>")
+
+                # Download fresh data
+                from ingestion.collectors.historical_downloader import HistoricalDownloader
+                from execution.broker_adapters.mt5_adapter import MT5Adapter
+                downloader = HistoricalDownloader(MT5Adapter())
+                downloader.download_all()
+                logger.info("[WEEKLY] Data download complete")
+
+                # Run backtest
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, "scripts/run_backtest_all.py",
+                     "--profile", "moderate", "--skip-check"],
+                    capture_output=True, text=True, timeout=7200,
+                    cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                )
+                if result.returncode == 0:
+                    logger.info("[WEEKLY] Backtest complete")
+                else:
+                    logger.error(f"[WEEKLY] Backtest failed: {result.stderr[-500:]}")
+
+            except Exception as e:
+                logger.error(f"[WEEKLY] Auto-backtest error: {e}")
+                engine.notifier.send(f"<b>Weekly Backtest Error:</b> {e}")
+
+        scheduler.add_job(
+            _weekly_backtest,
+            trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
+            id="weekly_backtest",
+            name="Weekly Auto-Backtest",
+            misfire_grace_time=600,
         )
 
         try:

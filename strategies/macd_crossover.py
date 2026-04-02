@@ -39,7 +39,7 @@ class MACDCrossoverStrategy:
             return None
 
         # STAT-003: ATR regime filter — MACD works best in high volatility
-        if not passes_atr_filter(clean, atr_col, threshold=1.5):
+        if not passes_atr_filter(clean, atr_col, threshold=1.2):
             return None
 
         curr = clean.iloc[-1]

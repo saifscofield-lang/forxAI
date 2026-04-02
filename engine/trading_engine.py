@@ -62,7 +62,10 @@ class TradingEngine:
         self.news_filter = None
         self.scan_count = 0
         self._ml_ready_notified = False  # Track if we already sent ML-ready notification
-        self.circuit_breaker = CircuitBreaker()
+        # Demo mode: log circuit breaker events but don't freeze strategies
+        import os
+        demo_mode = os.getenv("TRADING_MODE", "paper").lower() != "live"
+        self.circuit_breaker = CircuitBreaker(log_only=demo_mode)
         self.shadow_tracker = ShadowTracker()
         self._regime_cache = {}  # {symbol: {regime, timestamp}}
 

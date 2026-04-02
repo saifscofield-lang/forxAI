@@ -31,11 +31,13 @@ class CircuitBreaker:
         ev_lookback: int = DEFAULT_EV_LOOKBACK,
         max_strategy_dd_pct: float = DEFAULT_MAX_STRATEGY_DD_PCT,
         db_path: str = "data/trading.db",
+        log_only: bool = False,
     ):
         self.max_consecutive_losses = max_consecutive_losses
         self.ev_lookback = ev_lookback
         self.max_strategy_dd_pct = max_strategy_dd_pct
         self.db_path = db_path
+        self.log_only = log_only  # If True, log events but don't freeze
         self._frozen = {}  # {(strategy, symbol): reason}
 
     def check_strategy(
@@ -161,8 +163,12 @@ class CircuitBreaker:
         return False, None
 
     def _freeze(self, key: tuple, trigger_type: str, reason: str):
-        """Freeze a strategy and log it."""
+        """Freeze a strategy and log it. In log_only mode, log but don't freeze."""
         strategy_name, symbol = key
+        if self.log_only:
+            logger.warning(f"CIRCUIT BREAKER [LOG-ONLY]: {strategy_name}/{symbol} — {reason}")
+            self._log_event(strategy_name, symbol, trigger_type, reason, "LOG_ONLY")
+            return
         self._frozen[key] = reason
         logger.warning(f"CIRCUIT BREAKER: Freezing {strategy_name}/{symbol} — {reason}")
         self._log_event(strategy_name, symbol, trigger_type, reason, "FREEZE")

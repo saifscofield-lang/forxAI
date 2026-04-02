@@ -46,7 +46,7 @@ class RSIReversalStrategy:
             return None
 
         # STAT-003: ATR regime filter
-        if not passes_atr_filter(clean, atr_col, threshold=1.5):
+        if not passes_atr_filter(clean, atr_col, threshold=1.2):
             return None
 
         curr = clean.iloc[-1]

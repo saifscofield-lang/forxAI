@@ -57,7 +57,7 @@ class SMACrossoverStrategy:
             return None
 
         # STAT-003: ATR regime filter — skip low volatility
-        if not passes_atr_filter(df, atr_col, threshold=1.5):
+        if not passes_atr_filter(df, atr_col, threshold=1.2):
             return None
 
         # Drop NaN rows for indicator columns
