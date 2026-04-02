@@ -597,6 +597,22 @@ def main():
             misfire_grace_time=60,
         )
 
+        # Project status snapshot + report at 22:45 UTC
+        def _send_project_status():
+            if engine and engine.running:
+                from engine.project_monitor import ProjectMonitor
+                monitor = ProjectMonitor(engine)
+                report = monitor.run_daily()
+                engine.notifier.send(report)
+
+        scheduler.add_job(
+            _send_project_status,
+            trigger=CronTrigger(hour=22, minute=45),
+            id="project_status",
+            name="Project Status",
+            misfire_grace_time=300,
+        )
+
         # Daily report at 23:00 UTC
         def _send_daily_report():
             if engine and engine.running:
