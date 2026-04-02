@@ -41,8 +41,8 @@ timeframes:
 # --- إدارة المخاطر (مرنة للاختبار) ---
 risk:
   max_risk_per_trade: 0.01     # 1% per trade
-  max_daily_drawdown: 0.05     # 5% max daily drawdown
-  max_daily_loss: 0.02         # 2% max daily realized loss
+  max_daily_drawdown: 1.00     # disabled for demo — never stop trading
+  max_daily_loss: 1.00         # disabled for demo — never stop trading
   max_open_positions: 3        # max 3 positions at once
   max_correlated_positions: 3
   max_total_risk: 0.03         # 3% portfolio risk
