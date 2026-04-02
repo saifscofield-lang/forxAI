@@ -1,5 +1,5 @@
 """
-Project Tracker — Phase progress, system state, decisions, improvements
+متتبع المشروع — مراحل Strategy Lab وحالة النظام وسجل التحسينات
 """
 import sys
 sys.path.insert(0, ".")
@@ -7,16 +7,70 @@ sys.path.insert(0, ".")
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-st.set_page_config(page_title="Project Tracker", page_icon="::clipboard::", layout="wide")
+st.set_page_config(page_title="متتبع المشروع", page_icon="📋", layout="wide")
 
-st.title("Project Tracker")
-st.caption("Strategy Lab phases, system state, and enhancement history")
+# ── CSS matching main dashboard ──
+st.markdown("""
+<style>
+    .block-container { padding-top: 1rem; max-width: 1400px; }
+    div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, #1A1F2E 0%, #151A28 100%);
+        border: 1px solid #2D3748;
+        border-radius: 10px;
+        padding: 14px 18px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    hr { border-color: #1E2130 !important; margin: 0.8rem 0 !important; }
+    .streamlit-expanderHeader { font-weight: 600; }
+
+    .phase-card {
+        background: linear-gradient(135deg, #1A1F2E 0%, #151A28 100%);
+        border: 1px solid #2D3748;
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 12px;
+    }
+    .phase-active {
+        border-left: 4px solid #FF9800;
+    }
+    .phase-done {
+        border-left: 4px solid #4CAF50;
+    }
+    .phase-pending {
+        border-left: 4px solid #444;
+        opacity: 0.6;
+    }
+    .step-done { color: #4CAF50; }
+    .step-active { color: #FF9800; font-weight: 700; }
+    .step-pending { color: #666; }
+    .decision-card {
+        background: #12151C;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+    }
+    .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .anomaly-box {
+        background: #2D1111;
+        border: 1px solid #B71C1C;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 IMP_DB = "data/improvements.db"
 TRADING_DB = "data/trading.db"
-BACKTEST_DB = "data/backtest_results.db"
 
 
 def get_conn(path):
@@ -24,19 +78,74 @@ def get_conn(path):
 
 
 # ══════════════════════════════════════════════════════════════
-# TAB LAYOUT
+# HEADER
+# ══════════════════════════════════════════════════════════════
+st.markdown("""
+<div style="display:flex;align-items:baseline;gap:16px;margin-bottom:4px">
+    <span style="font-size:26px;font-weight:800;color:#1E88E5">متتبع المشروع</span>
+    <span style="font-size:13px;color:#666;letter-spacing:0.5px">Strategy Lab — المراحل والحالة والتحسينات</span>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Quick status bar ──
+try:
+    conn_t = get_conn(TRADING_DB)
+    conn_i = get_conn(IMP_DB)
+
+    # Current phase
+    phase_row = pd.read_sql("SELECT phase_number, name FROM project_phases WHERE status = 'IN_PROGRESS' LIMIT 1", conn_i)
+    current_phase = int(phase_row.iloc[0]["phase_number"]) if not phase_row.empty else 0
+    phase_name = phase_row.iloc[0]["name"] if not phase_row.empty else "---"
+
+    # Paper day
+    phase1_start = datetime(2026, 3, 31, tzinfo=timezone.utc)
+    paper_day = max(1, (datetime.now(timezone.utc) - phase1_start).days + 1)
+
+    # Balance
+    acc = pd.read_sql("SELECT balance FROM account_snapshots ORDER BY time DESC LIMIT 1", conn_t)
+    balance = acc.iloc[0]["balance"] if not acc.empty else 0
+
+    # Shadow signals
+    shadow_total = pd.read_sql("SELECT COUNT(*) as n FROM shadow_signals", conn_t).iloc[0]["n"]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("المرحلة الحالية", f"Phase {current_phase}", phase_name)
+    c2.metric("يوم التداول التجريبي", f"{paper_day} / 14")
+    c3.metric("الرصيد", f"${balance:,.0f}")
+    c4.metric("إشارات الظل", f"{shadow_total}")
+
+    conn_t.close()
+    conn_i.close()
+except Exception:
+    pass
+
+st.divider()
+
+# ══════════════════════════════════════════════════════════════
+# TABS
 # ══════════════════════════════════════════════════════════════
 tab_phases, tab_state, tab_decisions, tab_improvements, tab_shadow = st.tabs([
-    "Phases", "System State", "Decisions", "Improvements", "Shadow Trading"
+    "📊 المراحل",
+    "⚡ حالة النظام",
+    "📝 سجل القرارات",
+    "🔧 التحسينات",
+    "👁 التداول الظلي",
 ])
 
 
-# ── TAB 1: PHASES ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TAB 1: المراحل
+# ══════════════════════════════════════════════════════════════
 with tab_phases:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        خارطة طريق المشروع من Strategy Lab — كل مرحلة تحتوي خطوات محددة يجب إكمالها قبل الانتقال للتالية.
+        النظام يتقدم تلقائياً عند تحقق الشروط.
+    </div>
+    """, unsafe_allow_html=True)
+
     try:
         conn = get_conn(IMP_DB)
-
-        # Phase overview
         phases = pd.read_sql("SELECT * FROM project_phases ORDER BY phase_number", conn)
 
         if not phases.empty:
@@ -45,127 +154,207 @@ with tab_phases:
             in_progress = len(phases[phases["status"] == "IN_PROGRESS"])
             total = len(phases)
             progress = (completed + in_progress * 0.5) / total
-            st.progress(progress, text=f"Phase {completed}/{total} completed")
+            st.progress(progress, text=f"التقدم العام: {completed} من {total} مراحل مكتملة")
 
-            # Phase cards
+            PHASE_DESC = {
+                0: "بناء الأساس — كاشف النظام، قاعدة البيانات، نظام التقييم، قاطع الدائرة",
+                1: "المنتج الأولي — استراتيجيتان جديدتان + تداول تجريبي + جمع بيانات الظل",
+                2: "التوسع المحكوم — 6 فرضيات جديدة + تحسين Optuna + محرك القرار التلقائي",
+                3: "التطور الذكي — Claude API يولّد فرضيات + دمج الاستراتيجيات + تداول حقيقي 0.01 لوت",
+                4: "النخبة — بطولة أسبوعية + تقاعد تلقائي + إعادة تدريب شهري",
+            }
+
+            PHASE_WHY = {
+                0: "لا يمكن بناء نظام تداول بدون بنية تحتية صلبة — كاشف النظام يمنع التداول في الظروف الخاطئة، والتقييم يفرز الاستراتيجيات الضعيفة",
+                1: "الهدف ليس الربح بل جمع بيانات حقيقية — التداول الظلي يسجل كل إشارة بنتيجتها المحاكاة لتدريب ML لاحقاً",
+                2: "بعد إثبات المفهوم، نوسّع بحذر — كل فرضية جديدة تمر بنفس القمع الصارم قبل التفعيل",
+                3: "الذكاء الاصطناعي يبدأ بتوليد أفكار جديدة بناءً على ما نجح وما فشل — تطور ذاتي محكوم",
+                4: "النظام يدير نفسه — أفضل الاستراتيجيات تستمر، الأضعف تتقاعد، النماذج تُحدَّث دورياً",
+            }
+
+            STATUS_AR = {"COMPLETED": "مكتمل", "IN_PROGRESS": "جاري", "NOT_STARTED": "لم يبدأ"}
+
             for _, phase in phases.iterrows():
-                pn = phase["phase_number"]
+                pn = int(phase["phase_number"])
                 status = phase["status"]
+                css_class = "phase-done" if status == "COMPLETED" else ("phase-active" if status == "IN_PROGRESS" else "phase-pending")
+                status_color = "#4CAF50" if status == "COMPLETED" else ("#FF9800" if status == "IN_PROGRESS" else "#555")
 
-                if status == "COMPLETED":
-                    color = "#4CAF50"
-                    icon = "[DONE]"
-                elif status == "IN_PROGRESS":
-                    color = "#FF9800"
-                    icon = "[ACTIVE]"
-                else:
-                    color = "#666"
-                    icon = "[--]"
+                # Steps
+                steps = pd.read_sql(f"SELECT * FROM phase_steps WHERE phase_number = {pn} ORDER BY step_order", conn)
+                steps_done = len(steps[steps["status"] == "COMPLETED"]) if not steps.empty else 0
+                steps_total = len(steps)
 
-                with st.expander(f"{icon} Phase {pn} — {phase['name']}", expanded=(status == "IN_PROGRESS")):
-                    cols = st.columns([2, 1, 1])
-                    cols[0].markdown(f"**Duration:** {phase['duration']}")
-                    cols[1].markdown(f"**Status:** :{color}[{status}]")
+                with st.expander(
+                    f"{'✅' if status == 'COMPLETED' else ('🔶' if status == 'IN_PROGRESS' else '⬜')} "
+                    f"المرحلة {pn} — {phase['name']}  ({STATUS_AR.get(status, status)})",
+                    expanded=(status == "IN_PROGRESS"),
+                ):
+                    # Description and why
+                    st.markdown(f"""
+                    <div style="background:#0D1117;border-radius:8px;padding:14px 18px;margin-bottom:12px">
+                        <div style="color:#CCC;font-size:13px;line-height:1.8">{PHASE_DESC.get(pn, '')}</div>
+                        <div style="color:#888;font-size:12px;margin-top:8px;border-top:1px solid #1E2130;padding-top:8px">
+                            <b style="color:#FF9800">لماذا هذه المرحلة مهمة:</b> {PHASE_WHY.get(pn, '')}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Meta info
+                    meta_cols = st.columns(4)
+                    meta_cols[0].markdown(f"**المدة:** {phase['duration']}")
+                    meta_cols[1].markdown(f"**الحالة:** <span style='color:{status_color}'>{STATUS_AR.get(status, status)}</span>", unsafe_allow_html=True)
+                    meta_cols[2].markdown(f"**التقدم:** {steps_done}/{steps_total} خطوة")
                     if phase["started_at"]:
-                        cols[2].markdown(f"**Started:** {phase['started_at']}")
+                        meta_cols[3].markdown(f"**بدأ:** {phase['started_at']}")
 
-                    # Steps for this phase
-                    steps = pd.read_sql(
-                        f"SELECT * FROM phase_steps WHERE phase_number = {pn} ORDER BY step_order", conn
-                    )
+                    # Steps
                     if not steps.empty:
+                        st.markdown("**الخطوات:**")
                         for _, step in steps.iterrows():
                             s_status = step["status"]
                             if s_status == "COMPLETED":
-                                st.markdown(f"  [x] ~~{step['description']}~~")
+                                st.markdown(f"<div class='step-done'>✅ {step['description']}</div>", unsafe_allow_html=True)
                             elif s_status == "IN_PROGRESS":
-                                st.markdown(f"  [>] **{step['description']}**")
+                                st.markdown(f"<div class='step-active'>🔶 {step['description']}</div>", unsafe_allow_html=True)
                             else:
-                                st.markdown(f"  [ ] {step['description']}")
+                                st.markdown(f"<div class='step-pending'>⬜ {step['description']}</div>", unsafe_allow_html=True)
+
+                    if phase.get("notes"):
+                        st.caption(f"ملاحظة: {phase['notes']}")
 
         conn.close()
     except Exception as e:
-        st.error(f"Error loading phases: {e}")
+        st.error(f"خطأ في تحميل المراحل: {e}")
 
 
-# ── TAB 2: SYSTEM STATE ─────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TAB 2: حالة النظام
+# ══════════════════════════════════════════════════════════════
 with tab_state:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        لوحة مراقبة حية لحالة النظام — الرصيد، الصفقات، الاستراتيجيات النشطة، ومؤشرات الأداء.
+        يُحفظ snapshot يومي تلقائياً لتتبع التقدم عبر الزمن.
+    </div>
+    """, unsafe_allow_html=True)
+
     try:
-        # Live stats from trading.db
         conn_t = get_conn(TRADING_DB)
 
-        col1, col2, col3, col4 = st.columns(4)
-
-        # Account
+        # ── Metrics row ──
+        c1, c2, c3, c4, c5 = st.columns(5)
         try:
             acc = pd.read_sql("SELECT balance, equity FROM account_snapshots ORDER BY time DESC LIMIT 1", conn_t)
             if not acc.empty:
-                col1.metric("Balance", f"${acc.iloc[0]['balance']:,.2f}")
-                col2.metric("Equity", f"${acc.iloc[0]['equity']:,.2f}")
+                c1.metric("الرصيد", f"${acc.iloc[0]['balance']:,.2f}")
+                c2.metric("حقوق الملكية", f"${acc.iloc[0]['equity']:,.2f}")
         except Exception:
             pass
 
-        # Trades
         try:
-            trades = pd.read_sql("SELECT COUNT(*) as total, SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins, SUM(profit) as pnl FROM trades WHERE is_closed = 1", conn_t)
-            if not trades.empty and trades.iloc[0]["total"] > 0:
-                t = trades.iloc[0]
+            trades_q = pd.read_sql("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(profit) as pnl
+                FROM trades WHERE is_closed = 1
+            """, conn_t)
+            if not trades_q.empty and trades_q.iloc[0]["total"] > 0:
+                t = trades_q.iloc[0]
                 wr = (t["wins"] / t["total"] * 100) if t["total"] > 0 else 0
-                col3.metric("Total P&L", f"${t['pnl']:+,.2f}")
-                col4.metric("Win Rate", f"{wr:.1f}% ({int(t['wins'])}/{int(t['total'])})")
+                c3.metric("إجمالي الربح/الخسارة", f"${t['pnl']:+,.2f}")
+                c4.metric("نسبة الفوز", f"{wr:.1f}%")
+                c5.metric("الصفقات المغلقة", f"{int(t['total'])}")
         except Exception:
             pass
 
         st.divider()
 
-        # Strategy status
-        st.subheader("Active Strategies")
+        # ── Strategy performance ──
+        st.markdown("### أداء الاستراتيجيات")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            تصنيف الاستراتيجيات حسب الربحية — الأعلى ربحاً في الأعلى. يساعد في تحديد أي استراتيجية يجب تعزيزها أو إيقافها.
+        </div>
+        """, unsafe_allow_html=True)
+
         try:
             strats = pd.read_sql("""
-                SELECT strategy, symbol, COUNT(*) as trades,
-                       SUM(profit) as pnl,
-                       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins
+                SELECT strategy as 'الاستراتيجية',
+                       symbol as 'الزوج',
+                       COUNT(*) as 'الصفقات',
+                       ROUND(SUM(CASE WHEN profit > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'نسبة الفوز%',
+                       ROUND(SUM(profit), 2) as 'الربح/الخسارة'
                 FROM trades WHERE is_closed = 1
                 GROUP BY strategy, symbol
                 ORDER BY SUM(profit) DESC
             """, conn_t)
             if not strats.empty:
-                strats["WR%"] = (strats["wins"] / strats["trades"] * 100).round(1)
-                strats["pnl"] = strats["pnl"].round(2)
-                st.dataframe(
-                    strats[["strategy", "symbol", "trades", "WR%", "pnl"]].rename(
-                        columns={"strategy": "Strategy", "symbol": "Symbol", "trades": "Trades", "pnl": "P&L"}
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                st.dataframe(strats, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد صفقات مغلقة بعد")
         except Exception:
-            st.info("No trade data yet")
+            st.info("لا توجد بيانات صفقات")
 
         st.divider()
 
-        # Open positions
-        st.subheader("Open Positions")
+        # ── Open positions ──
+        st.markdown("### الصفقات المفتوحة")
         try:
             opens = pd.read_sql("""
-                SELECT symbol, order_type, strategy, volume, profit, open_time
+                SELECT symbol as 'الزوج',
+                       order_type as 'النوع',
+                       strategy as 'الاستراتيجية',
+                       volume as 'اللوت',
+                       ROUND(profit, 2) as 'الربح',
+                       open_time as 'وقت الفتح'
                 FROM trades WHERE is_closed = 0 ORDER BY open_time DESC
             """, conn_t)
             if not opens.empty:
                 st.dataframe(opens, use_container_width=True, hide_index=True)
             else:
-                st.info("No open positions")
+                st.info("لا توجد صفقات مفتوحة")
         except Exception:
             pass
+
+        st.divider()
+
+        # ── Historical state chart ──
+        st.markdown("### تطور الرصيد والأداء")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            يُسجَّل snapshot يومي تلقائياً — يساعد في رؤية اتجاه الحساب عبر الأيام.
+        </div>
+        """, unsafe_allow_html=True)
+
+        try:
+            conn_i = get_conn(IMP_DB)
+            history = pd.read_sql("SELECT time, balance, total_pnl, win_rate, filter_accuracy, notes FROM system_state ORDER BY time", conn_i)
+            conn_i.close()
+            if not history.empty and len(history) > 1:
+                history["time"] = pd.to_datetime(history["time"])
+                st.line_chart(history.set_index("time")[["balance"]], use_container_width=True)
+            else:
+                st.info("بيانات غير كافية — ستظهر بعد يومين من التشغيل")
+        except Exception:
+            st.info("لا توجد بيانات تاريخية بعد")
 
         conn_t.close()
 
     except Exception as e:
-        st.error(f"Error loading state: {e}")
+        st.error(f"خطأ في تحميل حالة النظام: {e}")
 
 
-# ── TAB 3: DECISIONS ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TAB 3: سجل القرارات
+# ══════════════════════════════════════════════════════════════
 with tab_decisions:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        كل قرار مهم في المشروع يُسجَّل هنا مع السبب والأثر — لفهم لماذا وصلنا لهذه النقطة وتجنب تكرار الأخطاء.
+    </div>
+    """, unsafe_allow_html=True)
+
     try:
         conn = get_conn(IMP_DB)
         decisions = pd.read_sql(
@@ -174,37 +363,52 @@ with tab_decisions:
         )
         conn.close()
 
+        CAT_CONFIG = {
+            "BACKTEST": ("#2196F3", "اختبار رجعي"),
+            "OPTIMIZATION": ("#9C27B0", "تحسين"),
+            "RISK": ("#F44336", "إدارة مخاطر"),
+            "STRATEGY": ("#FF9800", "استراتيجية"),
+            "DATA": ("#4CAF50", "بيانات"),
+            "PROCESS": ("#00BCD4", "عملية"),
+        }
+
         if not decisions.empty:
             for _, d in decisions.iterrows():
-                cat_colors = {
-                    "BACKTEST": "#2196F3",
-                    "OPTIMIZATION": "#9C27B0",
-                    "RISK": "#F44336",
-                    "STRATEGY": "#FF9800",
-                    "DATA": "#4CAF50",
-                }
-                color = cat_colors.get(d["category"], "#666")
+                color, cat_ar = CAT_CONFIG.get(d["category"], ("#666", d["category"]))
 
                 st.markdown(f"""
-                <div style="background:#1A1F2E;border-left:3px solid {color};border-radius:4px;padding:10px 14px;margin-bottom:8px">
-                    <div style="display:flex;justify-content:space-between">
-                        <span style="color:{color};font-weight:600;font-size:13px">{d['category']}</span>
-                        <span style="color:#666;font-size:12px">Phase {d['phase']} | {d['time']}</span>
+                <div class="decision-card" style="border-right:4px solid {color}">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <span class="badge" style="background:{color}22;color:{color}">{cat_ar}</span>
+                        <span style="color:#555;font-size:11px">المرحلة {d['phase']} &nbsp;|&nbsp; {d['time']}</span>
                     </div>
-                    <div style="color:#DDD;font-size:13px;margin-top:6px">{d['decision']}</div>
-                    <div style="color:#888;font-size:12px;margin-top:4px">Reason: {d['reason']}</div>
-                    <div style="color:#AAA;font-size:12px;margin-top:2px">Impact: {d['impact']}</div>
+                    <div style="color:#EEE;font-size:14px;font-weight:600;margin-bottom:6px">{d['decision']}</div>
+                    <div style="color:#999;font-size:12px;line-height:1.7">
+                        <b style="color:#FF9800">السبب:</b> {d['reason']}
+                    </div>
+                    <div style="color:#999;font-size:12px;line-height:1.7">
+                        <b style="color:#4CAF50">الأثر:</b> {d['impact']}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("No decisions logged yet")
+            st.info("لم تُسجَّل قرارات بعد")
 
     except Exception as e:
-        st.error(f"Error loading decisions: {e}")
+        st.error(f"خطأ في تحميل القرارات: {e}")
 
 
-# ── TAB 4: IMPROVEMENTS ─────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TAB 4: التحسينات
+# ══════════════════════════════════════════════════════════════
 with tab_improvements:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        سجل جميع التحسينات من IMP-01 إلى IMP-76 — كل تحسين يُتتبع من الفكرة إلى التنفيذ.
+        هذا يمنع فقدان الأفكار ويضمن تنفيذ الأولويات أولاً.
+    </div>
+    """, unsafe_allow_html=True)
+
     try:
         conn = get_conn(IMP_DB)
         imps = pd.read_sql(
@@ -216,38 +420,59 @@ with tab_improvements:
         if not imps.empty:
             # Summary metrics
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total", len(imps))
-            c2.metric("Done", len(imps[imps["status"] == "DONE"]))
-            c3.metric("Skipped", len(imps[imps["status"] == "SKIPPED"]))
-            c4.metric("Pending", len(imps[imps["status"].isin(["PENDING", "TODO"])]))
+            done_count = len(imps[imps["status"] == "DONE"])
+            skip_count = len(imps[imps["status"] == "SKIPPED"])
+            pending_count = len(imps[imps["status"].isin(["PENDING", "TODO"])])
+
+            c1.metric("الإجمالي", len(imps))
+            c2.metric("مكتمل", done_count)
+            c3.metric("تم تخطيه", skip_count)
+            c4.metric("معلّق", pending_count)
+
+            # Progress
+            if len(imps) > 0:
+                pct = done_count / len(imps)
+                st.progress(pct, text=f"نسبة الإنجاز: {pct*100:.0f}%")
 
             st.divider()
 
             # Filter
-            status_filter = st.multiselect("Filter by status", imps["status"].unique().tolist(), default=["DONE"])
+            status_options = imps["status"].unique().tolist()
+            STATUS_AR_MAP = {"DONE": "مكتمل", "SKIPPED": "تم تخطيه", "PENDING": "معلّق", "TODO": "للتنفيذ"}
+            status_filter = st.multiselect(
+                "تصفية حسب الحالة",
+                status_options,
+                default=["DONE"],
+                format_func=lambda x: STATUS_AR_MAP.get(x, x),
+            )
             filtered = imps[imps["status"].isin(status_filter)] if status_filter else imps
 
             st.dataframe(
-                filtered,
+                filtered.rename(columns={
+                    "code": "الرمز", "title": "العنوان", "category": "الفئة",
+                    "priority": "الأولوية", "status": "الحالة",
+                }),
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "code": st.column_config.TextColumn("Code", width=80),
-                    "title": st.column_config.TextColumn("Title", width=400),
-                    "category": st.column_config.TextColumn("Category", width=100),
-                    "priority": st.column_config.TextColumn("Priority", width=80),
-                    "status": st.column_config.TextColumn("Status", width=80),
-                },
             )
         else:
-            st.info("No improvements tracked")
+            st.info("لا توجد تحسينات مسجلة")
 
     except Exception as e:
-        st.error(f"Error loading improvements: {e}")
+        st.error(f"خطأ في تحميل التحسينات: {e}")
 
 
-# ── TAB 5: SHADOW TRADING ───────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+# TAB 5: التداول الظلي
+# ══════════════════════════════════════════════════════════════
 with tab_shadow:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        كل إشارة تُسجَّل سواء نُفذت أم رُفضت — ثم نتابع ماذا كان سيحدث لو نفذناها.
+        هذا ينتج بيانات تدريب ML عالية الجودة ويقيس دقة الفلاتر.
+    </div>
+    """, unsafe_allow_html=True)
+
     try:
         conn_t = get_conn(TRADING_DB)
 
@@ -259,39 +484,60 @@ with tab_shadow:
         resolved = pd.read_sql("SELECT COUNT(*) as n FROM shadow_signals WHERE sim_status != 'OPEN'", conn_t).iloc[0]["n"]
 
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Total Signals", total)
-        c2.metric("Executed", executed)
-        c3.metric("Blocked", blocked)
-        c4.metric("Open", open_s)
-        c5.metric("Resolved", resolved)
+        c1.metric("إجمالي الإشارات", total)
+        c2.metric("نُفذت", executed)
+        c3.metric("رُفضت", blocked)
+        c4.metric("مفتوحة", open_s)
+        c5.metric("محلولة", resolved)
+
+        # Target progress
+        target = 200
+        if total > 0:
+            pct = min(1.0, resolved / target)
+            st.progress(pct, text=f"الهدف: {resolved}/{target} إشارة محلولة لتدريب ML")
 
         if resolved > 0:
             st.divider()
-            st.subheader("Filter Effectiveness")
+            st.markdown("### فعالية الفلاتر")
+            st.markdown("""
+            <div style="color:#888;font-size:12px;margin-bottom:8px">
+                كلما ارتفعت دقة الفلتر، كان أفضل في حجب الإشارات الخاسرة. إذا انخفضت عن 50% فالفلتر يحجب إشارات رابحة أكثر من الخاسرة — يحتاج تعديل.
+            </div>
+            """, unsafe_allow_html=True)
 
             filter_stats = pd.read_sql("""
-                SELECT rejection_reason as Filter,
-                       COUNT(*) as Total,
-                       SUM(CASE WHEN label = 1 THEN 1 ELSE 0 END) as Would_Win,
-                       SUM(CASE WHEN label = 0 THEN 1 ELSE 0 END) as Would_Lose
+                SELECT rejection_reason as 'الفلتر',
+                       COUNT(*) as 'المجموع',
+                       SUM(CASE WHEN label = 1 THEN 1 ELSE 0 END) as 'كانت ستربح',
+                       SUM(CASE WHEN label = 0 THEN 1 ELSE 0 END) as 'كانت ستخسر',
+                       ROUND(CAST(SUM(CASE WHEN label = 0 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) * 100, 1) as 'الدقة%'
                 FROM shadow_signals
                 WHERE executed = 0 AND sim_status != 'OPEN'
                 GROUP BY rejection_reason
             """, conn_t)
 
             if not filter_stats.empty:
-                filter_stats["Accuracy%"] = (
-                    filter_stats["Would_Lose"] / filter_stats["Total"] * 100
-                ).round(1)
                 st.dataframe(filter_stats, use_container_width=True, hide_index=True)
 
         st.divider()
-        st.subheader("Recent Shadow Signals")
+        st.markdown("### آخر الإشارات")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            آخر 50 إشارة — لمراقبة ما يحدث الآن في الوقت الحقيقي.
+        </div>
+        """, unsafe_allow_html=True)
 
         recent = pd.read_sql("""
-            SELECT time, symbol, action, strategy, executed,
-                   rejection_reason, regime, sim_status, sim_pnl_pips,
-                   CASE WHEN label = 1 THEN 'WIN' WHEN label = 0 THEN 'LOSS' ELSE 'OPEN' END as outcome
+            SELECT time as 'الوقت',
+                   symbol as 'الزوج',
+                   action as 'الاتجاه',
+                   strategy as 'الاستراتيجية',
+                   CASE WHEN executed = 1 THEN 'نعم' ELSE 'لا' END as 'نُفذت',
+                   COALESCE(rejection_reason, '-') as 'سبب الرفض',
+                   COALESCE(regime, '-') as 'النظام',
+                   sim_status as 'الحالة',
+                   COALESCE(ROUND(sim_pnl_pips, 1), 0) as 'النتيجة (نقاط)',
+                   CASE WHEN label = 1 THEN 'ربح' WHEN label = 0 THEN 'خسارة' ELSE 'مفتوح' END as 'النتيجة'
             FROM shadow_signals
             ORDER BY time DESC LIMIT 50
         """, conn_t)
@@ -299,9 +545,9 @@ with tab_shadow:
         if not recent.empty:
             st.dataframe(recent, use_container_width=True, hide_index=True)
         else:
-            st.info("No shadow signals yet. Restart start.bat to begin collecting.")
+            st.info("لا توجد إشارات ظلية بعد — أعد تشغيل start.bat لبدء التجميع")
 
         conn_t.close()
 
     except Exception as e:
-        st.error(f"Error loading shadow data: {e}")
+        st.error(f"خطأ في تحميل بيانات الظل: {e}")
