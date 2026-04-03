@@ -48,6 +48,12 @@ risk:
   max_total_risk: 0.03         # 3% portfolio risk
   min_sl_atr_multiplier: 1.5
 
+# --- فلتر الجلسات ---
+session_filter:
+  blocked_hours_utc: [8, 15, 23]
+  golden_hours_utc: [7, 10, 11, 16, 17]
+  thursday_risk: "reduced"
+
 # --- جلب البيانات ---
 data:
   history_bars: 1000

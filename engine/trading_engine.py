@@ -262,6 +262,24 @@ class TradingEngine:
                 rejection_reason = None
                 rejection_detail = None
 
+                # Session Hour filter
+                session_cfg = self.config.get("session_filter", {})
+                blocked_hours = session_cfg.get("blocked_hours_utc", [])
+                current_hour = datetime.utcnow().hour
+                if current_hour in blocked_hours:
+                    rejection_reason = "SESSION_FILTER"
+                    rejection_detail = f"Hour {current_hour} UTC is a losing hour (blocked: {blocked_hours})"
+
+                # Thursday risk reduction
+                if not rejection_reason:
+                    thursday_risk = session_cfg.get("thursday_risk", "")
+                    if thursday_risk == "reduced" and datetime.utcnow().weekday() == 3:
+                        # Thursday: only allow golden hours
+                        golden_hours = session_cfg.get("golden_hours_utc", [])
+                        if golden_hours and current_hour not in golden_hours:
+                            rejection_reason = "SESSION_FILTER"
+                            rejection_detail = f"Thursday non-golden hour {current_hour} UTC (allowed: {golden_hours})"
+
                 # Circuit Breaker check
                 if self.circuit_breaker.is_frozen(strategy.name, symbol):
                     rejection_reason = "CIRCUIT_BREAKER"

@@ -53,6 +53,12 @@ data:
   history_bars: 1000         # عدد الشموع التاريخية
   update_interval_seconds: 5
 
+# --- فلتر الجلسات (من تقرير 119 صفقة) ---
+session_filter:
+  blocked_hours_utc: [8, 15, 23]     # ساعات خسارة ثابتة: -$5,500+
+  golden_hours_utc: [7, 10, 11, 16, 17]  # أفضل ساعات الأداء
+  thursday_risk: "reduced"            # أسوأ يوم في البيانات
+
 # --- التسجيل ---
 logging:
   level: "INFO"

@@ -141,6 +141,29 @@ def build_features(df: pd.DataFrame, dropna: bool = True) -> pd.DataFrame:
     df["rsi_14_change"] = df["rsi_14"].diff()
     df["macd_hist_change"] = df["macd_hist"].diff()
 
+    # ── 10. Relative Features (Report P1 — cross-pair comparable) ────
+    # RSI distance from neutral (more meaningful than absolute value)
+    df["rsi_14_dist_50"] = df["rsi_14"] - 50
+    df["rsi_7_dist_50"] = df["rsi_7"] - 50
+
+    # ATR ratio: current vs rolling average (volatility regime signal)
+    atr_sma_20 = df["atr_14"].rolling(20).mean()
+    df["atr_ratio_20"] = df["atr_14"] / atr_sma_20.replace(0, np.nan)
+
+    # Spread vs ATR (execution cost relative to move size)
+    if "spread" in df.columns:
+        df["spread_vs_atr"] = df["spread"] / df["atr_14"].replace(0, np.nan)
+
+    # Price vs 24h high/low normalized by ATR
+    df["price_vs_high_20_atr"] = (close - high.rolling(20).max()) / df["atr_14"].replace(0, np.nan)
+    df["price_vs_low_20_atr"] = (close - low.rolling(20).min()) / df["atr_14"].replace(0, np.nan)
+
+    # MACD histogram relative to ATR (normalized momentum)
+    df["macd_hist_vs_atr"] = df["macd_hist"] / df["atr_14"].replace(0, np.nan)
+
+    # Body size relative to ATR (candle significance)
+    df["body_vs_atr"] = body.abs() / df["atr_14"].replace(0, np.nan)
+
     # ── Clean up helper columns ──────────────────────────────────────
     # Drop raw indicator columns that are redundant with engineered features
     cols_to_drop = [
