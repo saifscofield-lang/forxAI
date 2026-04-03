@@ -43,7 +43,7 @@ risk:
   max_risk_per_trade: 0.01     # 1% per trade
   max_daily_drawdown: 1.00     # disabled for demo — never stop trading
   max_daily_loss: 1.00         # disabled for demo — never stop trading
-  max_open_positions: 3        # max 3 positions at once
+  max_open_positions: 10       # demo: allow many positions for data collection
   max_correlated_positions: 3
   max_total_risk: 0.03         # 3% portfolio risk
   min_sl_atr_multiplier: 1.5

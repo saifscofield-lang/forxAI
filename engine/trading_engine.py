@@ -643,6 +643,9 @@ class TradingEngine:
             return False, "Max positions or daily drawdown/loss limit"
 
         # Prevent conflicting directions on same symbol (IMP-02)
+        # Demo mode: allow multiple same-direction positions, only block conflicting
+        import os
+        is_demo = os.getenv("TRADING_MODE", "paper").lower() != "live"
         if len(open_positions) > 0:
             symbol_positions = open_positions[
                 open_positions["symbol"] == symbol
@@ -654,7 +657,11 @@ class TradingEngine:
                     return False, (
                         f"Conflicting {existing_dir} already open on {symbol}"
                     )
-                return False, f"Position already open on {symbol}"
+                # Demo: allow up to 3 same-direction positions per symbol
+                if not is_demo:
+                    return False, f"Position already open on {symbol}"
+                if len(symbol_positions) >= 3:
+                    return False, f"Max 3 positions on {symbol} (demo)"
 
         # IMP-30: Check correlated exposure
         if not open_positions.empty:
