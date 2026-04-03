@@ -124,9 +124,10 @@ st.divider()
 # ══════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════
-tab_phases, tab_state, tab_decisions, tab_improvements, tab_shadow = st.tabs([
+tab_phases, tab_state, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
     "📊 المراحل",
     "⚡ حالة النظام",
+    "🎯 تحليل الأنظمة",
     "📝 سجل القرارات",
     "🔧 التحسينات",
     "👁 التداول الظلي",
@@ -346,7 +347,142 @@ with tab_state:
 
 
 # ══════════════════════════════════════════════════════════════
-# TAB 3: سجل القرارات
+# TAB 3: تحليل الأنظمة (Regime Analysis)
+# ══════════════════════════════════════════════════════════════
+with tab_regime:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        تحليل أداء كل استراتيجية حسب نظام السوق — يكشف إذا كانت الاستراتيجية تملك Edge حقيقية أم مجرد حظ مؤقت.
+        <b style="color:#FF9800">النتيجة الرئيسية:</b> MACD و RSI تتفوقان في RANGING فقط. جميع الاستراتيجيات تفشل في TRENDING_BEAR.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn_t = get_conn(TRADING_DB)
+
+        # Regime distribution
+        regime_dist = pd.read_sql("""
+            SELECT detected_regime as 'النظام', COUNT(*) as 'الصفقات',
+                   SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as 'رابحة',
+                   ROUND(SUM(CASE WHEN pnl > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'نسبة الفوز%',
+                   ROUND(SUM(pnl), 2) as 'إجمالي الربح'
+            FROM trade_results
+            WHERE detected_regime IS NOT NULL
+            GROUP BY detected_regime
+            ORDER BY SUM(pnl) DESC
+        """, conn_t)
+
+        if not regime_dist.empty:
+            st.markdown("### توزيع الأنظمة")
+            st.markdown("""
+            <div style="color:#888;font-size:12px;margin-bottom:8px">
+                كيف توزعت الصفقات حسب نظام السوق — وأيها كان الأكثر ربحية.
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Metrics row
+            for _, row in regime_dist.iterrows():
+                regime_name = row["النظام"]
+                wr = row["نسبة الفوز%"]
+                pnl = row["إجمالي الربح"]
+                color = "#4CAF50" if pnl > 0 else "#F44336"
+
+                regime_ar = {
+                    "RANGING": "نطاقي (Ranging)",
+                    "TRENDING_BULL": "صاعد (Trending Bull)",
+                    "TRENDING_BEAR": "هابط (Trending Bear)",
+                    "TRANSITIONAL": "انتقالي (Transitional)",
+                    "VOLATILE": "متقلب (Volatile)",
+                }.get(regime_name, regime_name)
+
+                st.markdown(f"""
+                <div style="background:#12151C;border-radius:8px;padding:12px 16px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+                    <span style="color:#DDD;font-weight:600">{regime_ar}</span>
+                    <span style="color:#888">{int(row['الصفقات'])} صفقة</span>
+                    <span style="color:#888">WR: {wr}%</span>
+                    <span style="color:{color};font-weight:700">${pnl:+,.2f}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.divider()
+
+        # Strategy x Regime matrix
+        st.markdown("### أداء الاستراتيجيات حسب النظام")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            الجدول الأهم — يوضح أين تعمل كل استراتيجية وأين تفشل. الخلايا الخضراء = edge حقيقية، الحمراء = يجب تجنبها.
+        </div>
+        """, unsafe_allow_html=True)
+
+        regime_matrix = pd.read_sql("""
+            SELECT strategy as 'الاستراتيجية',
+                   detected_regime as 'النظام',
+                   COUNT(*) as 'الصفقات',
+                   ROUND(SUM(CASE WHEN pnl > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'نسبة الفوز%',
+                   ROUND(SUM(pnl), 2) as 'الربح/الخسارة',
+                   ROUND(AVG(pnl), 2) as 'متوسط الصفقة'
+            FROM trade_results
+            WHERE detected_regime IS NOT NULL
+            GROUP BY strategy, detected_regime
+            ORDER BY strategy, detected_regime
+        """, conn_t)
+
+        if not regime_matrix.empty:
+            st.dataframe(
+                regime_matrix,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "الربح/الخسارة": st.column_config.NumberColumn(format="$%.2f"),
+                    "متوسط الصفقة": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
+
+            st.divider()
+
+            # Key insights
+            st.markdown("### الاستنتاجات الرئيسية")
+
+            # Best combos
+            best = regime_matrix[regime_matrix["نسبة الفوز%"] >= 70].sort_values("نسبة الفوز%", ascending=False)
+            if not best.empty:
+                st.markdown("""
+                <div style="background:#0D2818;border:1px solid #1B5E20;border-radius:8px;padding:14px 18px;margin-bottom:10px">
+                    <div style="color:#4CAF50;font-weight:700;margin-bottom:8px">Edge مؤكدة (WR >= 70%)</div>
+                """, unsafe_allow_html=True)
+                for _, r in best.iterrows():
+                    st.markdown(f"""
+                    <div style="color:#CCC;font-size:13px;padding:2px 0">
+                        {r['الاستراتيجية']} في {r['النظام']}: <b style="color:#4CAF50">{r['نسبة الفوز%']}% WR</b> — {int(r['الصفقات'])} صفقة — ${r['الربح/الخسارة']:+,.2f}
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            # Worst combos
+            worst = regime_matrix[regime_matrix["نسبة الفوز%"] <= 35].sort_values("نسبة الفوز%")
+            if not worst.empty:
+                st.markdown("""
+                <div style="background:#2D1111;border:1px solid #B71C1C;border-radius:8px;padding:14px 18px;margin-bottom:10px">
+                    <div style="color:#F44336;font-weight:700;margin-bottom:8px">يجب تجنبها (WR <= 35%)</div>
+                """, unsafe_allow_html=True)
+                for _, r in worst.iterrows():
+                    st.markdown(f"""
+                    <div style="color:#CCC;font-size:13px;padding:2px 0">
+                        {r['الاستراتيجية']} في {r['النظام']}: <b style="color:#F44336">{r['نسبة الفوز%']}% WR</b> — {int(r['الصفقات'])} صفقة — ${r['الربح/الخسارة']:+,.2f}
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("لا توجد بيانات نظام — يجب تصنيف الصفقات أولاً")
+
+        conn_t.close()
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل تحليل الأنظمة: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# TAB 4: سجل القرارات
 # ══════════════════════════════════════════════════════════════
 with tab_decisions:
     st.markdown("""
