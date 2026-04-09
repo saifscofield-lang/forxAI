@@ -705,9 +705,12 @@ class TradingEngine:
                 logger.info(f"H4 trend is {h4_trend}, {action} on {symbol} [{strategy_name}] — allowed (filter disabled)")
 
         # IMP-15: Session filter — block low-liquidity hours
-        session_ok, session_reason = self._check_session(symbol)
-        if not session_ok:
-            return False, session_reason
+        # Disabled in demo mode — we want max trades for data collection
+        import os
+        if os.getenv("TRADING_MODE", "paper").lower() == "live":
+            session_ok, session_reason = self._check_session(symbol)
+            if not session_ok:
+                return False, session_reason
 
         pip_value = inst["pip_value"]
         entry = signal["price"]
