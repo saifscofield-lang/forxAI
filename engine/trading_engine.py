@@ -232,6 +232,22 @@ class TradingEngine:
                 current_regime = "TRANSITIONAL"
 
             # ── Build shadow context for this symbol ──
+            inst = self.instruments.get(symbol, {})
+            try:
+                account = self.adapter.get_account_info()
+                current_balance = account.get("balance", 100000)
+            except Exception:
+                current_balance = 100000
+
+            # Get live spread
+            spread_pips = None
+            try:
+                sym_info = self.adapter.get_symbol_info(symbol) if hasattr(self.adapter, 'get_symbol_info') else None
+                if sym_info and sym_info.get("spread"):
+                    spread_pips = sym_info["spread"] * inst.get("pip_value", 0.0001)
+            except Exception:
+                pass
+
             shadow_ctx = {
                 "regime": current_regime,
                 "adx_value": detail.get("adx"),
@@ -239,6 +255,10 @@ class TradingEngine:
                 "h4_trend": market_ctx.get("h4_trend"),
                 "volatility_regime": market_ctx.get("volatility_regime"),
                 "spread": detail.get("spread"),
+                "spread_pips": spread_pips,
+                "pip_value": inst.get("pip_value", 0.0001),
+                "balance": current_balance,
+                "risk_per_trade": self.config.get("risk", {}).get("max_risk_per_trade", 0.01),
             }
 
             # Track all signals from all strategies for this symbol

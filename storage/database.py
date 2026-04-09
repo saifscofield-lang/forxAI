@@ -501,6 +501,11 @@ class ShadowSignal(Base):
     rsi               = Column(Float, nullable=True)
     reason            = Column(String(300), nullable=True)          # Strategy reason text
 
+    # Position sizing (for realistic P&L simulation)
+    lot_size          = Column(Float, nullable=True)                # Calculated lot size (same formula as real)
+    pip_value         = Column(Float, nullable=True)                # 0.0001 or 0.01 for JPY/XAU
+    spread_at_entry   = Column(Float, nullable=True)                # Spread in pips at signal time
+
     # Execution status
     executed          = Column(Boolean, default=False)              # Was it actually traded?
     rejection_reason  = Column(String(200), nullable=True)          # Why rejected (ATR_FILTER, REGIME, CIRCUIT_BREAKER, NEWS, RISK, etc.)

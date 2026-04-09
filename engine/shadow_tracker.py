@@ -45,18 +45,40 @@ class ShadowTracker:
             executed: True if the signal was actually traded
             rejection_reason: Why it was rejected (ATR_FILTER, REGIME_MISMATCH, CIRCUIT_BREAKER, NEWS, RISK, etc.)
             rejection_detail: Detailed explanation
-            context: Market context dict (regime, adx, atr_ratio, bb_width, h4_trend, etc.)
+            context: Market context dict (regime, adx, atr_ratio, bb_width, h4_trend, spread_pips,
+                     lot_size, pip_value, balance, etc.)
 
         Returns:
             shadow signal ID or None on error
         """
         ctx = context or {}
 
+        # Calculate lot size if not provided (same formula as RiskManager)
+        lot_size = ctx.get("lot_size")
+        pip_value = ctx.get("pip_value", 0.0001)
+        symbol = signal.get("symbol", "")
+        if "JPY" in symbol or "XAU" in symbol:
+            pip_value = 0.01
+
+        if lot_size is None and signal.get("stop_loss") and signal.get("price"):
+            try:
+                balance = ctx.get("balance", 100000)
+                risk_pct = ctx.get("risk_per_trade", 0.01)
+                risk_amount = balance * risk_pct
+                sl_distance = abs(signal["price"] - signal["stop_loss"])
+                sl_pips = sl_distance / pip_value if pip_value > 0 else 0
+                pip_cost_per_lot = pip_value * 100_000
+                if sl_pips > 0 and pip_cost_per_lot > 0:
+                    lot_size = risk_amount / (sl_pips * pip_cost_per_lot)
+                    lot_size = max(0.01, min(1.0, round(lot_size, 2)))
+            except Exception:
+                lot_size = 0.1  # fallback
+
         try:
             session = SessionLocal()
             shadow = ShadowSignal(
                 time=datetime.now(timezone.utc),
-                symbol=signal.get("symbol", ""),
+                symbol=symbol,
                 strategy=signal.get("strategy", ""),
                 strategy_version=signal.get("strategy_version", ""),
                 action=signal.get("action", ""),
@@ -66,6 +88,9 @@ class ShadowTracker:
                 atr=signal.get("atr"),
                 rsi=signal.get("rsi"),
                 reason=signal.get("reason", ""),
+                lot_size=lot_size,
+                pip_value=pip_value,
+                spread_at_entry=ctx.get("spread_pips", ctx.get("spread")),
                 executed=executed,
                 rejection_reason=rejection_reason,
                 rejection_detail=rejection_detail,
@@ -207,16 +232,20 @@ class ShadowTracker:
 
         now = datetime.now(timezone.utc)
 
+        # Use actual lot size for realistic P&L, or fallback to 0.1
+        lot = shadow.lot_size or 0.1
+        spread_cost = (shadow.spread_at_entry or 0) * pip_value * lot * 100_000
+
         if tp_hit:
             pnl_pips = abs(tp - entry) / pip_value
             shadow.sim_status = "TP_HIT"
             shadow.sim_exit_price = tp
             shadow.sim_exit_time = now
             shadow.sim_pnl_pips = round(pnl_pips, 1)
-            shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * 0.01, 2)  # ~0.01 lot equivalent
+            shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * lot - spread_cost, 2)
             shadow.sim_exit_reason = "TP_HIT"
             shadow.label = 1  # profitable
-            shadow.filter_correct = shadow.executed  # if executed=True and profitable, filter was correct to allow
+            shadow.filter_correct = shadow.executed
             return True
 
         if sl_hit:
@@ -225,10 +254,10 @@ class ShadowTracker:
             shadow.sim_exit_price = sl
             shadow.sim_exit_time = now
             shadow.sim_pnl_pips = round(pnl_pips, 1)
-            shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * 0.01, 2)
+            shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * lot - spread_cost, 2)
             shadow.sim_exit_reason = "SL_HIT"
             shadow.label = 0  # loss
-            shadow.filter_correct = not shadow.executed  # if NOT executed and would have lost, filter was correct
+            shadow.filter_correct = not shadow.executed
             return True
 
         # Timeout check
@@ -255,11 +284,14 @@ class ShadowTracker:
         else:
             pnl_pips = (shadow.entry_price - current_price) / pip_value
 
+        lot = shadow.lot_size or 0.1
+        spread_cost = (shadow.spread_at_entry or 0) * pip_value * lot * 100_000
+
         shadow.sim_status = "TIMEOUT"
         shadow.sim_exit_price = current_price
         shadow.sim_exit_time = datetime.now(timezone.utc)
         shadow.sim_pnl_pips = round(pnl_pips, 1)
-        shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * 0.01, 2)
+        shadow.sim_pnl = round(pnl_pips * pip_value * 100_000 * lot - spread_cost, 2)
         shadow.sim_exit_reason = "TIMEOUT"
         shadow.label = 1 if pnl_pips > 0 else 0
         shadow.filter_correct = (shadow.executed == (pnl_pips > 0))
