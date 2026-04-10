@@ -199,7 +199,7 @@ class MT5Adapter:
             return {}
         return {
             "symbol": symbol,
-            "time":   datetime.fromtimestamp(tick.time),
+            "time":   datetime.utcfromtimestamp(tick.time),
             "bid":    tick.bid,
             "ask":    tick.ask,
             "spread": round((tick.ask - tick.bid) * 100000, 1),
@@ -419,7 +419,7 @@ class MT5Adapter:
                 "tp":          p.tp,
                 "profit":      p.profit,
                 "swap":        p.swap,
-                "open_time":   datetime.fromtimestamp(p.time),
+                "open_time":   datetime.utcfromtimestamp(p.time),
                 "comment":     p.comment,
             })
         return pd.DataFrame(data)

@@ -282,6 +282,14 @@ class TradingEngine:
                 rejection_reason = None
                 rejection_detail = None
 
+                # Strategy blacklist check
+                blacklist = self.config.get("strategy_blacklist", [])
+                for bl in blacklist:
+                    if bl.get("strategy") == strategy.name and bl.get("symbol") == symbol:
+                        rejection_reason = "BLACKLISTED"
+                        rejection_detail = bl.get("reason", f"{strategy.name} blacklisted on {symbol}")
+                        break
+
                 # Session Hour filter
                 session_cfg = self.config.get("session_filter", {})
                 blocked_hours = session_cfg.get("blocked_hours_utc", [])
@@ -1006,7 +1014,7 @@ class TradingEngine:
             # Last deal is the closing deal
             close_deal = deals[-1]
             close_price = close_deal.price
-            close_time = datetime.fromtimestamp(close_deal.time)
+            close_time = datetime.utcfromtimestamp(close_deal.time)
             pnl = close_deal.profit + close_deal.swap + close_deal.commission
 
             # Determine exit reason from comment

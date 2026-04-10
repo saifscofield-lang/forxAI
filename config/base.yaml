@@ -53,6 +53,15 @@ data:
   history_bars: 1000         # عدد الشموع التاريخية
   update_interval_seconds: 5
 
+# --- حظر استراتيجية على زوج معين ---
+strategy_blacklist:
+  - strategy: "ml_direct"
+    symbol: "XAUUSD"
+    reason: "Lost $30K+ shorting gold in uptrend — model biased SELL"
+  - strategy: "ml_filtered_sma"
+    symbol: "XAUUSD"
+    reason: "Same ML model bias as ml_direct on gold"
+
 # --- فلتر الجلسات (من تقرير 119 صفقة) ---
 session_filter:
   blocked_hours_utc: [8, 15, 23]     # ساعات خسارة ثابتة: -$5,500+
