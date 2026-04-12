@@ -1,5 +1,5 @@
-generated_at: 2026-03-31 01:27:07 UTC
-run_id: '20260330_183010'
+generated_at: 2026-04-01 01:35:40 UTC
+run_id: '20260331_171807'
 profile: moderate
 profile_name: متوسط (Paper)
 criteria:
@@ -20,28 +20,8 @@ approved:
     total_pnl: 13686.67
     max_drawdown_pct: 3.6
     sharpe: 5.408
-  AUDUSD_sma_crossover:
-    symbol: AUDUSD
-    strategy: sma_crossover
-    version: '1.0'
-    timeframe: D1
-    trades: 79
-    win_rate: 73.4
-    profit_factor: 1.58
-    total_pnl: 13686.67
-    max_drawdown_pct: 3.6
-    sharpe: 5.408
-  EURUSD_bollinger_bounce:
-    symbol: EURUSD
-    strategy: bollinger_bounce
-    version: '2.0'
-    timeframe: D1
-    trades: 39
-    win_rate: 41.0
-    profit_factor: 1.177
-    total_pnl: 4259.24
-    max_drawdown_pct: 5.4
-    sharpe: 1.384
+    score: 90.9
+    grade: S
   USDCHF_ml_direct:
     symbol: USDCHF
     strategy: ml_direct
@@ -53,3 +33,31 @@ approved:
     total_pnl: 29527.72
     max_drawdown_pct: 7.6
     sharpe: 5.328
+    score: 82.4
+    grade: A
+  AUDUSD_sma_crossover:
+    symbol: AUDUSD
+    strategy: sma_crossover
+    version: '1.0'
+    timeframe: D1
+    trades: 79
+    win_rate: 73.4
+    profit_factor: 1.58
+    total_pnl: 13686.67
+    max_drawdown_pct: 3.6
+    sharpe: 5.408
+    score: 0.0
+    grade: F
+  EURUSD_bollinger_bounce:
+    symbol: EURUSD
+    strategy: bollinger_bounce
+    version: '2.0'
+    timeframe: D1
+    trades: 39
+    win_rate: 41.0
+    profit_factor: 1.177
+    total_pnl: 4259.24
+    max_drawdown_pct: 5.4
+    sharpe: 1.384
+    score: 0.0
+    grade: F

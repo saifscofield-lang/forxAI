@@ -1,12 +1,12 @@
 ForexAI ML Training Data Export
-Exported at: 2026-03-25 21:05:08
+Exported at: 2026-04-09 14:05:43
 Source: D:\forexAI\data\trading.db
 
-signal_logs: 332 rows
-trade_results: 112 rows
-indicator_snapshots: 2045 rows
-market_contexts: 3060 rows
-trades: 112 rows
-scan_details: 2036 rows
-news_events: 127 rows
-account_snapshots: 502 rows
+signal_logs: 510 rows
+trade_results: 175 rows
+indicator_snapshots: 3664 rows
+market_contexts: 4949 rows
+trades: 178 rows
+scan_details: 3634 rows
+news_events: 308 rows
+account_snapshots: 798 rows

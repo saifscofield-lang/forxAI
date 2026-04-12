@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForexAI — تقرير حالة النظام</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c10;
+    --bg2:       #0f1218;
+    --bg3:       #151a22;
+    --border:    #1e2530;
+    --accent:    #00d4ff;
+    --accent2:   #ff6b35;
+    --accent3:   #7cfc6e;
+    --danger:    #ff4757;
+    --warn:      #ffa502;
+    --text:      #d4dce8;
+    --text-dim:  #6b7a8d;
+    --text-head: #eef2f7;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  /* ── Header ── */
+  .hero {
+    background: linear-gradient(135deg, #0a0c10 0%, #0d1520 50%, #0a1015 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 48px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -80px; left: -80px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0,212,255,.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -60px; right: 80px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(255,107,53,.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--text-head);
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero-sub {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .hero-meta {
+    margin-top: 28px;
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .meta-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .meta-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-head);
+  }
+  .meta-value.green { color: var(--accent3); }
+  .meta-value.orange { color: var(--warn); }
+  .meta-value.red { color: var(--danger); }
+  .meta-value.blue { color: var(--accent); }
+
+  /* ── Layout ── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 48px 80px;
+  }
+
+  /* ── Section Title ── */
+  .section {
+    margin-bottom: 56px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 28px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .icon-blue  { background: rgba(0,212,255,.12); }
+  .icon-red   { background: rgba(255,71,87,.12); }
+  .icon-green { background: rgba(124,252,110,.12); }
+  .icon-orange{ background: rgba(255,165,2,.12); }
+  .icon-purple{ background: rgba(167,139,250,.12); }
+
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-head);
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-right: auto;
+  }
+
+  /* ── Phase Timeline ── */
+  .phases {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  .phase-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .phase-card:hover { border-color: #2a3545; }
+  .phase-card.active { border-color: rgba(0,212,255,.3); }
+  .phase-card.active::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .phase-card.done { border-color: rgba(124,252,110,.2); }
+  .phase-card.done::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent3);
+  }
+  .phase-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 10px;
+  }
+  .badge-done    { background: rgba(124,252,110,.15); color: var(--accent3); }
+  .badge-active  { background: rgba(0,212,255,.15);   color: var(--accent); }
+  .badge-planned { background: rgba(255,165,2,.15);   color: var(--warn); }
+  .badge-future  { background: rgba(167,139,250,.15); color: #a78bfa; }
+
+  .phase-title { font-size: 15px; font-weight: 700; color: var(--text-head); margin-bottom: 8px; }
+  .phase-items { list-style: none; }
+  .phase-items li {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 3px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .phase-items li::before { content: '—'; color: var(--border); }
+
+  /* ── Stats Grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 1px;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-head);
+  }
+  .stat-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── Weakness Cards ── */
+  .weakness-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .weakness-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-right: 3px solid var(--danger);
+    border-radius: 12px;
+    padding: 24px 28px;
+  }
+  .weakness-card.warn { border-right-color: var(--warn); }
+  .weakness-card.med  { border-right-color: #a78bfa; }
+
+  .wk-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .wk-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--danger);
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: .4;
+  }
+  .wk-num.warn { color: var(--warn); }
+  .wk-num.med  { color: #a78bfa; }
+
+  .wk-title { font-size: 17px; font-weight: 700; color: var(--text-head); margin-bottom: 4px; }
+  .wk-subtitle { font-size: 12px; color: var(--text-dim); }
+  .wk-body { font-size: 14px; color: var(--text); line-height: 1.8; }
+  .wk-body strong { color: var(--warn); }
+
+  .risk-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 10px;
+  }
+  .risk-high   { background: rgba(255,71,87,.15);  color: var(--danger); }
+  .risk-medium { background: rgba(255,165,2,.15);  color: var(--warn); }
+  .risk-low    { background: rgba(167,139,250,.15);color: #a78bfa; }
+
+  /* ── Proposal Cards ── */
+  .proposals {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .proposal-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .proposal-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+  .proposal-phase {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .ph2 { background: rgba(0,212,255,.12); color: var(--accent); }
+  .ph3 { background: rgba(255,165,2,.12); color: var(--warn); }
+  .ph4 { background: rgba(167,139,250,.12); color: #a78bfa; }
+  .ph-now { background: rgba(124,252,110,.12); color: var(--accent3); }
+
+  .proposal-title { font-size: 16px; font-weight: 700; color: var(--text-head); flex: 1; }
+  .proposal-effort {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .proposal-body {
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .proposal-why, .proposal-how {
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text);
+  }
+  .proposal-label {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .code-block {
+    background: #0a0e14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #7dd3fc;
+    margin-top: 10px;
+    direction: ltr;
+    text-align: left;
+  }
+  .code-block .comment { color: #3d5166; }
+  .code-block .string  { color: #86efac; }
+  .code-block .num     { color: #f9a8d4; }
+
+  /* ── Priority Table ── */
+  .priority-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .priority-table th {
+    text-align: right;
+    padding: 12px 16px;
+    background: var(--bg3);
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+  }
+  .priority-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  .priority-table tr:hover td { background: var(--bg3); }
+  .priority-table tr:last-child td { border-bottom: none; }
+
+  .impact-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .impact-high   { background: rgba(124,252,110,.12); color: var(--accent3); }
+  .impact-medium { background: rgba(0,212,255,.12);   color: var(--accent); }
+  .impact-low    { background: rgba(107,122,141,.12); color: var(--text-dim); }
+
+  .effort-bar {
+    display: flex;
+    gap: 3px;
+    margin-top: 4px;
+  }
+  .effort-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+  .effort-dot.filled { background: var(--accent2); }
+
+  /* ── Symbol table ── */
+  .symbol-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .symbol-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .symbol-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-head);
+    margin-bottom: 6px;
+  }
+  .symbol-pnl {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .symbol-wr {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .symbol-status {
+    font-size: 10px;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .s-star   { background: rgba(124,252,110,.12); color: var(--accent3); }
+  .s-warn   { background: rgba(255,165,2,.12);   color: var(--warn); }
+  .s-danger { background: rgba(255,71,87,.12);   color: var(--danger); }
+  .s-ok     { background: rgba(0,212,255,.12);   color: var(--accent); }
+
+  /* ── Divider ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 32px 48px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Alert Box ── */
+  .alert {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .alert-danger  { background: rgba(255,71,87,.08);  border: 1px solid rgba(255,71,87,.2); }
+  .alert-warn    { background: rgba(255,165,2,.08);  border: 1px solid rgba(255,165,2,.2); }
+  .alert-success { background: rgba(124,252,110,.08);border: 1px solid rgba(124,252,110,.2);}
+  .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+  @media (max-width: 768px) {
+    .container { padding: 24px 20px 60px; }
+    .hero { padding: 36px 20px 32px; }
+    .phases, .stats-grid, .symbol-grid { grid-template-columns: 1fr 1fr; }
+    .proposal-body { grid-template-columns: 1fr; }
+    .hero-meta { gap: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-tag">◈ ForexAI System Report — 2026</div>
+  <h1>حالة النظام <span>الكاملة</span></h1>
+  <p class="hero-sub">تحليل شامل • نقاط الضعف • خارطة التطوير — بناءً على 119 صفقة و 358 إشارة</p>
+  <div class="hero-meta">
+    <div class="meta-item">
+      <span class="meta-label">إجمالي الأرباح</span>
+      <span class="meta-value green">+$17,458</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Win Rate</span>
+      <span class="meta-value orange">47.1%</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Risk / Reward</span>
+      <span class="meta-value blue">1.91 : 1</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">إجمالي الصفقات</span>
+      <span class="meta-value">119</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">تاريخ التقرير</span>
+      <span class="meta-value" style="font-size:15px;margin-top:4px;">3 أبريل 2026</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- 1. CURRENT STATUS -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon icon-blue">⬡</div>
+      <h2 class="section-title">حالة النظام الحالية</h2>
+      <span class="section-num">01</span>
+    </div>
+
+    <!-- Phases -->
+    <div class="phases">
+      <div class="phase-card done">
+        <span class="phase-badge badge-done">✓ مكتملة</span>
+        <div class="phase-title">Phase 1</div>
+        <ul class="phase-items">
+          <li>MT5 Adapter</li>
+          <li>Indicators Engine</li>
+          <li>Strategy Layer</li>
+          <li>Risk Manager</li>
+          <li>SQLite Storage</li>
+          <li>Circuit Breaker</li>
+        </ul>
+      </div>
+      <div class="phase-card active">
+        <span class="phase-badge badge-active">← الآن</span>
+        <div class="phase-title">Phase 2</div>
+        <ul class="phase-items">
+          <li>ML Classifier</li>
+          <li>Backtest Engine</li>
+          <li>Dashboard</li>
+          <li>Session Filter</li>
+        </ul>
+      </div>
+      <div class="phase-card">
+        <span class="phase-badge badge-planned">مخطط</span>
+        <div class="phase-title">Phase 3</div>
+        <ul class="phase-items">
+          <li>Portfolio Optimizer</li>
+          <li>Regime Auto-Switch</li>
+          <li>Multi-TF Confirm</li>
+          <li>Adaptive Sizing</li>
+        </ul>
+      </div>
+      <div class="phase-card">
+        <span class="phase-badge badge-future">مستقبلي</span>
+        <div class="phase-title">Phase 4</div>
+        <ul class="phase-items">
+          <li>RL Agent</li>
+          <li>News NLP</li>
+          <li>Live Parallel</li>
+          <li>Walk-Forward</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">أفضل استراتيجية</div>
+        <div class="stat-value" style="font-size:20px;color:var(--accent3)">MACD</div>
+        <div class="stat-note">WR 62.5% — PnL +$15,372</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">أفضل زوج</div>
+        <div class="stat-value" style="font-size:20px;color:var(--accent3)">AUDUSD</div>
+        <div class="stat-note">WR 77.8% — PnL +$7,030</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">أسوأ ساعة</div>
+        <div class="stat-value" style="font-size:20px;color:var(--danger)">15:00</div>
+        <div class="stat-note">UTC — خسارة $3,711 في 13 صفقة</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">معدل التنفيذ</div>
+        <div class="stat-value" style="font-size:20px;color:var(--warn)">33.2%</div>
+        <div class="stat-note">119 منفَّذة من 358 إشارة</div>
+      </div>
+    </div>
+
+    <!-- Symbols -->
+    <div class="symbol-grid">
+      <div class="symbol-card">
+        <div class="symbol-name">AUDUSD</div>
+        <div class="symbol-pnl" style="color:var(--accent3)">+$7,030</div>
+        <div class="symbol-wr">WR: 77.8% — 18 صفقة</div>
+        <span class="symbol-status s-star">⭐ STAR</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">XAUUSD</div>
+        <div class="symbol-pnl" style="color:var(--accent3)">+$11,625</div>
+        <div class="symbol-wr">WR: 32% — 25 صفقة</div>
+        <span class="symbol-status s-warn">⚠ مراقبة</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">EURUSD</div>
+        <div class="symbol-pnl" style="color:var(--accent3)">+$2,340</div>
+        <div class="symbol-wr">WR: 55.6% — 9 صفقات</div>
+        <span class="symbol-status s-ok">✓ مستقر</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">GBPUSD</div>
+        <div class="symbol-pnl" style="color:var(--accent3)">+$1,572</div>
+        <div class="symbol-wr">WR: 41.7% — 12 صفقة</div>
+        <span class="symbol-status s-ok">✓ مقبول</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">USDJPY</div>
+        <div class="symbol-pnl" style="color:var(--danger)">-$675</div>
+        <div class="symbol-wr">WR: 58.8% — 17 صفقة</div>
+        <span class="symbol-status s-warn">⚠ SL واسع</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">USDCAD</div>
+        <div class="symbol-pnl" style="color:var(--danger)">-$1,998</div>
+        <div class="symbol-wr">WR: 36.4% — 11 صفقة</div>
+        <span class="symbol-status s-danger">✕ مشكلة</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">USDCHF</div>
+        <div class="symbol-pnl" style="color:var(--text)">+$900</div>
+        <div class="symbol-wr">WR: 50% — 10 صفقات</div>
+        <span class="symbol-status s-ok">✓ محايد</span>
+      </div>
+      <div class="symbol-card">
+        <div class="symbol-name">NZDUSD</div>
+        <div class="symbol-pnl" style="color:var(--danger)">-$3,336</div>
+        <div class="symbol-wr">WR: 29.4% — 17 صفقة</div>
+        <span class="symbol-status s-danger">✕ مُوقَف</span>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- 2. WEAKNESSES -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon icon-red">⚠</div>
+      <h2 class="section-title">نقاط الضعف الحرجة</h2>
+      <span class="section-num">02</span>
+    </div>
+
+    <div class="alert alert-danger">
+      <span class="alert-icon">🔴</span>
+      <div>النظام لم يُثبت <strong>"Edge" حقيقية</strong> بعد. الأرباح الظاهرة مدفوعة بصفقة واحدة غير قابلة للتكرار، وحجم العينة لا يسمح بأي استنتاجات إحصائية موثوقة.</div>
+    </div>
+
+    <div class="weakness-list">
+
+      <!-- W1 -->
+      <div class="weakness-card">
+        <div class="wk-header">
+          <div class="wk-num">01</div>
+          <div>
+            <div class="wk-title">حجم العينة الإحصائية غير كافٍ (Sample Size)</div>
+            <div class="wk-subtitle">119 صفقة — أقل بكثير من الحد الأدنى للموثوقية</div>
+          </div>
+        </div>
+        <div class="wk-body">
+          لا يمكن الوثوق بأي مقياس (Win Rate، Profit Factor، Sharpe) بهذا الحجم. الـ Confidence Interval واسع جداً ليعني شيئاً. نموذج LightGBM سيتعلم <strong>الضوضاء (Noise)</strong> في هذه الصفقات بدلاً من الأنماط الحقيقية، مما يؤدي إلى Overfitting — تفوق في الباكتيست وفشل في الحساب الحقيقي.
+          <br><br>
+          للمقارنة: صندوق تحوط احترافي لا يقرر نشر استراتيجية إلا بعد <strong>500+ صفقة out-of-sample</strong>.
+        </div>
+        <span class="risk-tag risk-high">خطورة عالية</span>
+      </div>
+
+      <!-- W2 -->
+      <div class="weakness-card">
+        <div class="wk-header">
+          <div class="wk-num">02</div>
+          <div>
+            <div class="wk-title">اعتماد على قيمة شاذة واحدة (Outlier Dependency)</div>
+            <div class="wk-subtitle">XAUUSD = 68% من إجمالي الأرباح</div>
+          </div>
+        </div>
+        <div class="wk-body">
+          صفقة واحدة (+$11,916) تمثل 68% من الأرباح الكاملة. بدونها: <strong>PnL = +$5,542 فقط</strong>، وبعض الاستراتيجيات تصبح خاسرة.
+          <br><br>
+          المشكلة الأعمق: XAUUSD win rate = <strong>32% فقط</strong> — يعني النظام يخسر في XAUUSD 68% من الوقت، لكن ربحاً ضخماً واحداً يغطي الجميع. هذا نمط <strong>خطير جداً</strong> في الحساب الحقيقي حيث قد لا تتكرر هذه الصفقة الاستثنائية.
+        </div>
+        <span class="risk-tag risk-high">خطورة عالية</span>
+      </div>
+
+      <!-- W3 -->
+      <div class="weakness-card warn">
+        <div class="wk-header">
+          <div class="wk-num" style="color:var(--warn)">03</div>
+          <div>
+            <div class="wk-title">Slippage & Latency غير مُختبَر</div>
+            <div class="wk-subtitle">تأجيل التحقق من التطابق ديمو/حقيقي إلى Phase 4</div>
+          </div>
+        </div>
+        <div class="wk-body">
+          استراتيجيات M15 قد <strong>تنهار تماماً</strong> في الحساب الحقيقي إذا كان هناك تأخير بضع أجزاء من الثانية في التنفيذ أو فارق Spread بسيط عن الديمو. الفرق بين سعر الديمو والحقيقي قد يلتهم كامل ربح الصفقة في إطارات زمنية قصيرة.
+        </div>
+        <span class="risk-tag risk-medium">خطورة متوسطة</span>
+      </div>
+
+      <!-- W4 -->
+      <div class="weakness-card warn">
+        <div class="wk-header">
+          <div class="wk-num" style="color:var(--warn)">04</div>
+          <div>
+            <div class="wk-title">ساعات الخسارة الثابتة غير محجوبة</div>
+            <div class="wk-subtitle">خسارة $5,500+ في ثلاث ساعات محددة</div>
+          </div>
+        </div>
+        <div class="wk-body">
+          البيانات تُظهر بوضوح ثلاث ساعات خاسرة بشكل متسق:
+          <br>• <strong>15:00 UTC:</strong> 13 صفقة — خسارة $3,711 (WR 31%)
+          <br>• <strong>08:00 UTC:</strong> WR 0% — خسارة $1,226
+          <br>• <strong>23:00 UTC:</strong> WR 0% — خسارة $945
+          <br><br>هذه المعلومة موجودة في البيانات لكن لم تُترجم إلى فلتر تلقائي بعد.
+        </div>
+        <span class="risk-tag risk-medium">يمكن إصلاحه الآن</span>
+      </div>
+
+      <!-- W5 -->
+      <div class="weakness-card med">
+        <div class="wk-header">
+          <div class="wk-num" style="color:#a78bfa">05</div>
+          <div>
+            <div class="wk-title">غياب Regime Labeling للصفقات التاريخية</div>
+            <div class="wk-subtitle">MACD لم يُختبَر في Trending vs Ranging بشكل منفصل</div>
+          </div>
+        </div>
+        <div class="wk-body">
+          الـ 119 صفقة لم تُصنَّف بعد حسب نظام السوق وقت التنفيذ. بدون هذا التصنيف، لا يمكن معرفة: هل MACD يعمل لأنه جيد فعلاً، أم لأن السوق كان Trending في الفترة المُختبَرة فقط؟ الجواب على هذا السؤال هو الفرق بين <strong>Edge حقيقية وحظ مؤقت</strong>.
+        </div>
+        <span class="risk-tag risk-low">خطورة منخفضة</span>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- 3. PROPOSALS -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon icon-green">◈</div>
+      <h2 class="section-title">المقترحات والحلول</h2>
+      <span class="section-num">03</span>
+    </div>
+
+    <div class="alert alert-success">
+      <span class="alert-icon">🟢</span>
+      <div>المقترح رقم 1 لا يحتاج ML ولا كود معقد — مجرد إضافة فلتر ساعات يمكن أن يرفع الأرباح الصافية بـ $5,500+ فوراً.</div>
+    </div>
+
+    <div class="proposals">
+
+      <!-- P0: Immediate -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph-now">فوري — الآن</span>
+          <div class="proposal-title">حجب ساعات الخسارة الثابتة</div>
+          <span class="proposal-effort">جهد: منخفض</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            البيانات تُثبت إحصائياً أن ثلاث ساعات تخسر بشكل متسق بغض النظر عن الاستراتيجية أو الزوج. هذا النمط حقيقي وقابل للعمل عليه دون انتظار ML.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">كيف؟</div>
+            إضافة Session Filter في config/base.yaml:
+            <div class="code-block"><span class="comment"># في config/base.yaml</span>
+session_filter:
+  blocked_hours_utc: [<span class="num">8</span>, <span class="num">15</span>, <span class="num">23</span>]
+  golden_hours_utc:  [<span class="num">7</span>, <span class="num">10</span>, <span class="num">11</span>, <span class="num">16</span>, <span class="num">17</span>]
+  thursday_risk:     <span class="string">reduced</span> <span class="comment"># أسوأ يوم</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P1: Feature Engineering -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph2">Phase 2</span>
+          <div class="proposal-title">Feature Engineering نسبي بدلاً من مطلق</div>
+          <span class="proposal-effort">جهد: متوسط</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            النموذج الحالي يُعطى قيم مطلقة (RSI = 45.2) لا تعني شيئاً بدون سياق. قيمة RSI 45 في XAUUSD تختلف تماماً عن RSI 45 في EURUSD. الـ Features النسبية تعمل عبر الأزواج والفترات الزمنية المختلفة.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">كيف؟</div>
+            <div class="code-block"><span class="comment"># بدلاً من القيم المطلقة</span>
+features = {
+  <span class="string">'rsi_dist_50'</span>: rsi - <span class="num">50</span>,
+  <span class="string">'price_vs_24h_high'</span>: (price-high24h)/atr,
+  <span class="string">'atr_ratio'</span>: atr / atr_sma20,
+  <span class="string">'spread_vs_atr'</span>: spread / atr,
+  <span class="string">'hour_sin'</span>: sin(<span class="num">2</span>π × hour/<span class="num">24</span>),
+  <span class="string">'regime'</span>: detected_regime,
+}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P2: Regime Labeling -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph2">Phase 2</span>
+          <div class="proposal-title">Regime Labeling للصفقات التاريخية</div>
+          <span class="proposal-effort">جهد: منخفض</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            تصنيف الـ 119 صفقة حسب حالة السوق وقتها يحل جزئياً مشكلة الـ Sample Size. بدلاً من نموذج واحد لكل الظروف، تصبح لديك مجموعات أصغر لكن متجانسة: MACD في Trending فقط، RSI في Ranging فقط.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">كيف؟</div>
+            <div class="code-block"><span class="comment"># لكل صفقة في trade_results</span>
+regime = detect_regime(
+  adx=get_adx(symbol, open_time),
+  atr_ratio=get_atr_ratio(symbol, open_time),
+  bb_width=get_bb_width(symbol, open_time)
+)
+<span class="comment"># ثم تحليل منفصل لكل regime</span>
+macd_trending_wr = <span class="num">?</span>
+macd_ranging_wr  = <span class="num">?</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P3: Anchored Walk-Forward -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph2">Phase 2</span>
+          <div class="proposal-title">Anchored Walk-Forward بدلاً من Sliding Window</div>
+          <span class="proposal-effort">جهد: متوسط</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            Sliding Window يُضيّع البيانات القديمة. مع 119 صفقة فقط لا يمكن تحمّل هذا الهدر. Anchored يراكم التاريخ ويختبر على المستقبل دائماً.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">مقارنة الأسلوبين</div>
+            <div class="code-block"><span class="comment"># Sliding (سيّئ مع بيانات قليلة)</span>
+[Jan→Mar] Train → [Apr] Test
+[Feb→Apr] Train → [May] Test <span class="comment"># يفقد يناير</span>
+
+<span class="comment"># Anchored (الأنسب للوضع الحالي)</span>
+[Jan→Mar] Train → [Apr] Test
+[Jan→Apr] Train → [May] Test <span class="comment"># يتراكم</span>
+[Jan→May] Train → [Jun] Test</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P4: Adaptive Sizing -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph3">Phase 3</span>
+          <div class="proposal-title">Volatility Scaling بدلاً من النسبة الثابتة</div>
+          <span class="proposal-effort">جهد: متوسط</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            البيانات تُثبت: الصفقات الرابحة دخلت عند ATR = 3.59 بينما الخاسرة عند ATR = 1.18. النسبة الثابتة 1% لا تستغل هذا الفارق الجوهري. زيادة الحجم في ظروف ATR مرتفع ستضاعف العائد.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">المعادلة المقترحة</div>
+            <div class="code-block"><span class="comment"># Volatility-Adjusted Position Size</span>
+target_risk_pct = <span class="num">0.01</span>   <span class="comment"># 1% base</span>
+atr_ratio = current_atr / avg_atr_20
+
+<span class="comment"># Scale: 0.5x عند ATR منخفض، 1.5x عند مرتفع</span>
+scale = clip(atr_ratio, <span class="num">0.5</span>, <span class="num">1.5</span>)
+actual_risk = target_risk_pct × scale</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P5: Portfolio Optimizer -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph3">Phase 3</span>
+          <div class="proposal-title">Portfolio-Level Correlation Optimizer</div>
+          <span class="proposal-effort">جهد: عالٍ</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            النظام يحسّن كل استراتيجية منفصلة، لكنها تتداخل على نفس الأزواج في نفس الوقت. AUDUSD + MACD و AUDUSD + RSI قد يكونا في نفس الاتجاه — هذا يضاعف المخاطرة دون وعي.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">الجداول المقترحة</div>
+            <div class="code-block"><span class="comment">-- جداول جديدة في database.py</span>
+portfolio_allocations (
+  strategy, symbol, weight,
+  last_updated
+)
+correlation_matrix (
+  strategy_a, strategy_b,
+  correlation, period_days
+)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- P6: RL Agent -->
+      <div class="proposal-card">
+        <div class="proposal-header">
+          <span class="proposal-phase ph4">Phase 4</span>
+          <div class="proposal-title">Reinforcement Learning Agent للخروج الذكي</div>
+          <span class="proposal-effort">جهد: عالٍ جداً</span>
+        </div>
+        <div class="proposal-body">
+          <div class="proposal-why">
+            <div class="proposal-label">لماذا؟</div>
+            LightGBM يتوقع "هل هذه الصفقة رابحة؟" عند الدخول فقط. RL Agent يتعلم سياسة كاملة: متى تدخل، متى تخرج جزئياً، متى تحرك الستوب لوس. جدول monitor_states مع phase (0-4) هو بيئة التدريب الجاهزة.
+          </div>
+          <div class="proposal-how">
+            <div class="proposal-label">الجداول الجديدة</div>
+            <div class="code-block"><span class="comment">-- بيئة التدريب جاهزة في DB</span>
+<span class="comment">-- monitor_states.phase (0-4) = state</span>
+<span class="comment">-- trade_results.pnl = reward</span>
+<span class="comment">-- trade_results.mfe/mae = signal</span>
+
+rl_episodes (
+  ticket, state_json,
+  action, reward, done
+)</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- 4. PRIORITY TABLE -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon icon-orange">◎</div>
+      <h2 class="section-title">جدول الأولويات</h2>
+      <span class="section-num">04</span>
+    </div>
+
+    <table class="priority-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>المهمة</th>
+          <th>المرحلة</th>
+          <th>الأثر</th>
+          <th>الجهد</th>
+          <th>السبب</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">01</td>
+          <td style="font-weight:600;color:var(--text-head)">حجب ساعات الخسارة</td>
+          <td><span class="proposal-phase ph-now" style="font-size:10px">فوري</span></td>
+          <td><span class="impact-tag impact-high">عالٍ</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">$5,500+ خسارة يمكن تجنبها اليوم</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">02</td>
+          <td style="font-weight:600;color:var(--text-head)">Regime Labeling للصفقات الحالية</td>
+          <td><span class="proposal-phase ph2" style="font-size:10px">Phase 2</span></td>
+          <td><span class="impact-tag impact-high">عالٍ</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">يُثبت أو ينفي وجود Edge حقيقية</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">03</td>
+          <td style="font-weight:600;color:var(--text-head)">جمع 300+ صفقة قبل ML</td>
+          <td><span class="proposal-phase ph2" style="font-size:10px">Phase 2</span></td>
+          <td><span class="impact-tag impact-high">أساسي</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">119 صفقة تؤدي إلى Overfitting مضمون</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">04</td>
+          <td style="font-weight:600;color:var(--text-head)">Feature Engineering نسبي</td>
+          <td><span class="proposal-phase ph2" style="font-size:10px">Phase 2</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">يرفع جودة النموذج عبر الأزواج</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">05</td>
+          <td style="font-weight:600;color:var(--text-head)">Anchored Walk-Forward Validation</td>
+          <td><span class="proposal-phase ph2" style="font-size:10px">Phase 2</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">يمنع Overfitting ويضمن التعميم</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">06</td>
+          <td style="font-weight:600;color:var(--text-head)">Regime Auto-Switch</td>
+          <td><span class="proposal-phase ph3" style="font-size:10px">Phase 3</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">البنية التحتية جاهزة في regime_logs</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">07</td>
+          <td style="font-weight:600;color:var(--text-head)">Volatility Scaling</td>
+          <td><span class="proposal-phase ph3" style="font-size:10px">Phase 3</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">ATR winners=3.59 vs losers=1.18</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">08</td>
+          <td style="font-weight:600;color:var(--text-head)">Portfolio Correlation Optimizer</td>
+          <td><span class="proposal-phase ph3" style="font-size:10px">Phase 3</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot filled"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">منع تركيز المخاطر غير المقصود</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">09</td>
+          <td style="font-weight:600;color:var(--text-head)">RL Agent للخروج الذكي</td>
+          <td><span class="proposal-phase ph4" style="font-size:10px">Phase 4</span></td>
+          <td><span class="impact-tag impact-high">عالٍ</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot filled"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">monitor_states.phase جاهز كبيئة تدريب</td>
+        </tr>
+        <tr>
+          <td style="font-family:monospace;color:var(--accent)">10</td>
+          <td style="font-weight:600;color:var(--text-head)">News Sentiment NLP</td>
+          <td><span class="proposal-phase ph4" style="font-size:10px">Phase 4</span></td>
+          <td><span class="impact-tag impact-medium">متوسط</span></td>
+          <td>
+            <div class="effort-bar">
+              <div class="effort-dot filled"></div><div class="effort-dot filled"></div><div class="effort-dot filled"></div>
+            </div>
+          </td>
+          <td style="font-size:12px;color:var(--text-dim)">news_events.surprise موجود في DB</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Roadmap Summary -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-icon icon-purple">◇</div>
+      <h2 class="section-title">خلاصة خارطة الطريق</h2>
+      <span class="section-num">05</span>
+    </div>
+    <div class="code-block" style="font-size:13px;line-height:2">
+<span class="comment">═══════════════════════════════════════════════════════</span>
+<span class="comment">  ForexAI — Development Roadmap Summary</span>
+<span class="comment">═══════════════════════════════════════════════════════</span>
+
+Phase 1  <span class="string">✅  DONE</span>   MT5 + Engine + Risk + Storage (15 جدول)
+           ↓
+Phase 2  <span class="string">🔜  NOW</span>    Session Filter → Regime Labeling → 300 Trades → ML
+           ↓
+Phase 3  <span class="string">📋  NEXT</span>   Portfolio Optimizer + Regime Auto-Switch + Volatility Scaling
+           ↓
+Phase 4  <span class="string">🏆  GOAL</span>   RL Agent + News NLP + Live ↔ Demo Parallel Validation
+
+<span class="comment">───────────────────────────────────────────────────────</span>
+<span class="comment">  التحذير الجوهري:</span>
+<span class="comment">  لا تنشر على حساب حقيقي قبل إثبات Edge في Regime محدد</span>
+<span class="comment">  مع 300+ صفقة out-of-sample موثقة.</span>
+<span class="comment">═══════════════════════════════════════════════════════</span></div>
+  </div>
+
+</div>
+
+<div class="footer">
+  ForexAI System Report — Generated 2026-04-03 &nbsp;|&nbsp;
+  Based on: 119 Trades · 358 Signals · storage/database.py · WORKFLOW.md · strategy_improvement_guide.md
+</div>
+
+</body>
+</html>
