@@ -105,14 +105,20 @@ try:
     acc = pd.read_sql("SELECT balance FROM account_snapshots ORDER BY time DESC LIMIT 1", conn_t)
     balance = acc.iloc[0]["balance"] if not acc.empty else 0
 
-    # Shadow signals
+    # Shadow signals + STABLE stats
     shadow_total = pd.read_sql("SELECT COUNT(*) as n FROM shadow_signals", conn_t).iloc[0]["n"]
+    stable_count = pd.read_sql("SELECT COUNT(*) as n FROM shadow_signals WHERE data_group = 'STABLE'", conn_t).iloc[0]["n"]
 
-    c1, c2, c3, c4 = st.columns(4)
+    # Delta from baseline
+    baseline_balance = 87580.0
+    delta = balance - baseline_balance
+
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("المرحلة الحالية", f"Phase {current_phase}", phase_name)
-    c2.metric("يوم التداول التجريبي", f"{paper_day} / 14")
-    c3.metric("الرصيد", f"${balance:,.0f}")
-    c4.metric("إشارات الظل", f"{shadow_total}")
+    c2.metric("الرصيد", f"${balance:,.0f}", f"${delta:+,.0f} من خط الأساس")
+    c3.metric("إشارات الظل", f"{shadow_total}", f"{stable_count} مستقرة")
+    c4.metric("تجميد الكود", "14 يوم", "Apr 14 - Apr 28")
+    c5.metric("الهدف", "200+ مستقرة", f"{stable_count}/200")
 
     conn_t.close()
     conn_i.close()
@@ -124,9 +130,10 @@ st.divider()
 # ══════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════
-tab_phases, tab_state, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
+tab_phases, tab_state, tab_data, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
     "📊 المراحل",
     "⚡ حالة النظام",
+    "📦 تقسيم البيانات",
     "🎯 تحليل الأنظمة",
     "📝 سجل القرارات",
     "🔧 التحسينات",
@@ -347,7 +354,120 @@ with tab_state:
 
 
 # ══════════════════════════════════════════════════════════════
-# TAB 3: تحليل الأنظمة (Regime Analysis)
+# TAB 3: تقسيم البيانات (Data Segmentation)
+# ══════════════════════════════════════════════════════════════
+with tab_data:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        البيانات مقسمة لثلاث مجموعات حسب استقرار الكود — لأن خلط بيانات من إصدارات مختلفة يؤدي لنتائج مضللة.
+        <b style="color:#FF9800">القاعدة:</b> فقط مجموعة STABLE تُستخدم لتدريب ML وتقييم الأداء.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn_i = get_conn(IMP_DB)
+        conn_t = get_conn(TRADING_DB)
+
+        # Load segmentation log
+        segments = pd.read_sql("SELECT * FROM data_segmentation_log ORDER BY id", conn_i)
+
+        if not segments.empty:
+            GROUP_COLORS = {"OLD": "#666", "TRANSITION": "#FF9800", "STABLE": "#4CAF50"}
+            GROUP_AR = {"OLD": "قديمة (أرشيف)", "TRANSITION": "انتقالية (تعلم)", "STABLE": "مستقرة (تدريب ML)"}
+            GROUP_ICONS = {"OLD": "📁", "TRANSITION": "🔄", "STABLE": "✅"}
+
+            # Summary metrics
+            c1, c2, c3 = st.columns(3)
+            for i, (_, seg) in enumerate(segments.iterrows()):
+                g = seg["group_name"]
+                col = [c1, c2, c3][i]
+                col.metric(
+                    f"{GROUP_ICONS.get(g, '')} {GROUP_AR.get(g, g)}",
+                    f"{int(seg['trade_count'])} صفقة",
+                    f"${seg['total_pnl']:+,.0f} | WR {seg['win_rate']}%",
+                )
+
+            st.divider()
+
+            # Live count from trading.db
+            for _, seg in segments.iterrows():
+                g = seg["group_name"]
+                color = GROUP_COLORS.get(g, "#666")
+                ar_name = GROUP_AR.get(g, g)
+
+                # Get current count from DB
+                try:
+                    live = pd.read_sql(
+                        f"SELECT COUNT(*) as n, ROUND(SUM(profit),2) as pnl FROM trades WHERE is_closed=1 AND data_group='{g}'",
+                        conn_t,
+                    )
+                    live_count = int(live.iloc[0]["n"]) if not live.empty else 0
+                    live_pnl = live.iloc[0]["pnl"] or 0 if not live.empty else 0
+                except Exception:
+                    live_count = int(seg["trade_count"])
+                    live_pnl = seg["total_pnl"]
+
+                with st.expander(f"{GROUP_ICONS.get(g, '')} {g} — {ar_name} ({live_count} صفقة | ${live_pnl:+,.0f})", expanded=(g == "STABLE")):
+                    st.markdown(f"""
+                    <div style="background:#0D1117;border-left:3px solid {color};border-radius:6px;padding:14px 18px;margin-bottom:10px">
+                        <div style="color:#CCC;font-size:13px;line-height:1.8;margin-bottom:8px">{seg['description']}</div>
+                        <div style="color:#888;font-size:12px">
+                            <b>الفترة:</b> {seg['date_from']} ← {seg['date_to']}  |
+                            <b>الإصدارات:</b> {seg['engine_versions']}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown(f"""
+                        <div style="background:#0D2818;border:1px solid #1B5E20;border-radius:6px;padding:12px 16px">
+                            <div style="color:#4CAF50;font-weight:700;font-size:12px;margin-bottom:6px">صالحة لـ</div>
+                            <div style="color:#CCC;font-size:12px;line-height:1.8">{seg['valid_for']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_b:
+                        st.markdown(f"""
+                        <div style="background:#2D1111;border:1px solid #B71C1C;border-radius:6px;padding:12px 16px">
+                            <div style="color:#F44336;font-weight:700;font-size:12px;margin-bottom:6px">غير صالحة لـ</div>
+                            <div style="color:#CCC;font-size:12px;line-height:1.8">{seg['not_valid_for']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown(f"""
+                    <div style="background:#12151C;border-radius:6px;padding:10px 16px;margin-top:8px">
+                        <div style="color:#888;font-size:11px;margin-bottom:4px">الإعدادات النشطة في هذه الفترة:</div>
+                        <div style="color:#7dd3fc;font-size:11px;font-family:monospace">{seg['config_changes']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.divider()
+
+            # Baseline info
+            st.markdown("""
+            <div style="background:#0D1117;border:1px solid #2D3748;border-radius:8px;padding:16px 20px">
+                <div style="color:#1E88E5;font-weight:700;margin-bottom:8px">خط الأساس الجديد</div>
+                <div style="color:#CCC;font-size:13px;line-height:1.8">
+                    <b>التاريخ:</b> 14 أبريل 2026<br>
+                    <b>الرصيد:</b> $87,580<br>
+                    <b>القاعدة:</b> كل التقييمات تُقاس من هذا التاريخ فقط<br>
+                    <b>تجميد الكود:</b> لا تغييرات حتى 28 أبريل — لجمع 200+ إشارة مستقرة
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.info("لم يتم تقسيم البيانات بعد — شغّل scripts/segment_data.py")
+
+        conn_i.close()
+        conn_t.close()
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل تقسيم البيانات: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# TAB 4: تحليل الأنظمة (Regime Analysis)
 # ══════════════════════════════════════════════════════════════
 with tab_regime:
     st.markdown("""
