@@ -20,9 +20,14 @@ from loguru import logger
 IMP_DB = "data/improvements.db"
 TRADING_DB = "data/trading.db"
 
-# Phase 1 start date
+# Phase 1 start date (reset to stable baseline)
 PHASE1_START = datetime(2026, 3, 31, tzinfo=timezone.utc)
-PHASE1_PAPER_DAYS = 14  # Reduced from 30 — shadow trading covers data collection
+PHASE1_PAPER_DAYS = 14
+
+# Stable evaluation baseline — only STABLE data counts for evaluation
+STABLE_BASELINE_DATE = datetime(2026, 4, 14, tzinfo=timezone.utc)
+STABLE_BASELINE_BALANCE = 87580.0  # Balance at 2026-04-14 baseline reset
+STABLE_COLLECTION_DAYS = 14  # Collect stable data for 2 weeks before ML retraining
 PHASE1_MAX_DEVIATION = 0.15  # 15% paper vs backtest
 
 
