@@ -130,9 +130,10 @@ st.divider()
 # ══════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════
-tab_phases, tab_state, tab_data, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
+tab_phases, tab_state, tab_weekly, tab_data, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
     "📊 المراحل",
     "⚡ حالة النظام",
+    "📈 راقب الأداء",
     "📦 تقسيم البيانات",
     "🎯 تحليل الأنظمة",
     "📝 سجل القرارات",
@@ -354,7 +355,237 @@ with tab_state:
 
 
 # ══════════════════════════════════════════════════════════════
-# TAB 3: تقسيم البيانات (Data Segmentation)
+# TAB 3: راقب الأداء الأسبوعي (Weekly Performance Monitor)
+# ══════════════════════════════════════════════════════════════
+with tab_weekly:
+    import numpy as np
+
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        مقارنة أداء كل نسخة من المحرك — كل نسخة كانت كود مختلف، النتائج لا تُخلط.
+        يساعد في فهم هل التغييرات حسّنت الأداء أم أضرّت به.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn_t = get_conn(TRADING_DB)
+
+        # ─── ملخص النسخ (Version Summary) ───
+        st.markdown("### 📊 ملخص النسخ")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            كل نسخة من المحرك لها كود وفلاتر مختلفة — مقارنتها توضح أثر كل تغيير.
+        </div>
+        """, unsafe_allow_html=True)
+
+        versions = pd.read_sql("""
+            SELECT COALESCE(engine_version, '?') as 'النسخة',
+                   data_group as 'المجموعة',
+                   COUNT(*) as 'الصفقات',
+                   SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as 'رابحة',
+                   ROUND(SUM(CASE WHEN profit > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'WR%',
+                   ROUND(SUM(profit), 2) as 'الربح',
+                   ROUND(AVG(profit), 2) as 'متوسط الصفقة',
+                   ROUND(MIN(profit), 2) as 'أسوأ صفقة',
+                   ROUND(MAX(profit), 2) as 'أفضل صفقة',
+                   MIN(open_time) as 'من',
+                   MAX(open_time) as 'إلى'
+            FROM trades WHERE is_closed = 1
+            GROUP BY engine_version, data_group
+            ORDER BY MIN(open_time)
+        """, conn_t)
+
+        if not versions.empty:
+            for _, v in versions.iterrows():
+                pnl = v["الربح"]
+                color = "#4CAF50" if pnl > 0 else "#F44336"
+                group_badge = {"OLD": "📁 قديمة", "TRANSITION": "🔄 انتقالية", "STABLE": "✅ مستقرة"}.get(v["المجموعة"], "❓")
+
+                st.markdown(f"""
+                <div style="background:#12151C;border-left:3px solid {color};border-radius:6px;padding:14px 18px;margin-bottom:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="color:#EEE;font-weight:700;font-size:15px">v{v['النسخة']}</span>
+                        <span style="color:#888;font-size:11px">{group_badge} | {v['من'][:10] if v['من'] else '?'} ← {v['إلى'][:10] if v['إلى'] else '?'}</span>
+                    </div>
+                    <div style="display:flex;gap:24px;margin-top:8px;font-size:13px">
+                        <span style="color:#888">{int(v['الصفقات'])} صفقة</span>
+                        <span style="color:#888">WR: {v['WR%']}%</span>
+                        <span style="color:{color};font-weight:700">${pnl:+,.2f}</span>
+                        <span style="color:#888">متوسط: ${v['متوسط الصفقة']:+,.2f}</span>
+                        <span style="color:#F44336">أسوأ: ${v['أسوأ صفقة']:+,.2f}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.divider()
+
+        # ─── أداء النسخة الحالية (Current Version Performance) ───
+        st.markdown("### 🎯 أداء النسخة الحالية (STABLE)")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            فقط الصفقات من فترة الاستقرار (بعد 10 أبريل) — الكود ثابت والفلاتر لم تتغير.
+        </div>
+        """, unsafe_allow_html=True)
+
+        stable_trades = pd.read_sql("""
+            SELECT strategy as 'الاستراتيجية',
+                   symbol as 'الزوج',
+                   COUNT(*) as 'الصفقات',
+                   ROUND(SUM(CASE WHEN profit > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'WR%',
+                   ROUND(SUM(profit), 2) as 'الربح',
+                   ROUND(AVG(profit), 2) as 'المتوسط'
+            FROM trades WHERE is_closed = 1 AND data_group = 'STABLE'
+            GROUP BY strategy, symbol
+            ORDER BY SUM(profit) DESC
+        """, conn_t)
+
+        if not stable_trades.empty:
+            # Summary metrics
+            total_stable = pd.read_sql("""
+                SELECT COUNT(*) as n,
+                       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as w,
+                       ROUND(SUM(profit), 2) as pnl
+                FROM trades WHERE is_closed = 1 AND data_group = 'STABLE'
+            """, conn_t).iloc[0]
+
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("صفقات مستقرة", int(total_stable["n"]))
+            wr = (total_stable["w"] / total_stable["n"] * 100) if total_stable["n"] > 0 else 0
+            sc2.metric("نسبة الفوز", f"{wr:.1f}%")
+            sc3.metric("الربح", f"${total_stable['pnl']:+,.2f}")
+            sc4.metric("من خط الأساس", f"${total_stable['pnl']:+,.2f}")
+
+            st.dataframe(
+                stable_trades,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "الربح": st.column_config.NumberColumn(format="$%.2f"),
+                    "المتوسط": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
+
+            # Weekly breakdown
+            st.divider()
+            st.markdown("### 📅 الأداء الأسبوعي")
+
+            weekly = pd.read_sql("""
+                SELECT strftime('%Y-W%W', open_time) as 'الأسبوع',
+                       COUNT(*) as 'الصفقات',
+                       SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as 'رابحة',
+                       ROUND(SUM(CASE WHEN profit > 0 THEN 1.0 ELSE 0 END) / COUNT(*) * 100, 1) as 'WR%',
+                       ROUND(SUM(profit), 2) as 'الربح',
+                       ROUND(AVG(profit), 2) as 'المتوسط'
+                FROM trades WHERE is_closed = 1
+                GROUP BY strftime('%Y-W%W', open_time)
+                ORDER BY strftime('%Y-W%W', open_time)
+            """, conn_t)
+
+            if not weekly.empty:
+                # Chart
+                chart_data = weekly.set_index("الأسبوع")[["الربح"]].copy()
+                st.bar_chart(chart_data, use_container_width=True)
+                st.dataframe(weekly, use_container_width=True, hide_index=True)
+
+        else:
+            st.info("لا توجد صفقات مستقرة بعد")
+
+        st.divider()
+
+        # ─── مونت كارلو (Monte Carlo Simulation) ───
+        st.markdown("### 🎲 اختبار مونت كارلو")
+        st.markdown("""
+        <div style="color:#888;font-size:12px;margin-bottom:8px">
+            يأخذ نتائج الصفقات المستقرة ويعيد ترتيبها عشوائياً 1000 مرة — يظهر أسوأ وأفضل سيناريو ممكن بنفس الصفقات.
+            إذا كان أسوأ سيناريو خسارة كارثية = النظام هش. إذا كان الفارق صغير = النظام مستقر.
+        </div>
+        """, unsafe_allow_html=True)
+
+        mc_trades = pd.read_sql("""
+            SELECT profit FROM trades WHERE is_closed = 1 AND data_group = 'STABLE'
+        """, conn_t)
+
+        if len(mc_trades) >= 10:
+            profits = mc_trades["profit"].values
+            n_simulations = 1000
+            n_trades = len(profits)
+
+            # Run Monte Carlo
+            final_pnls = []
+            max_dds = []
+            for _ in range(n_simulations):
+                shuffled = np.random.choice(profits, size=n_trades, replace=True)
+                equity = np.cumsum(shuffled)
+                final_pnls.append(equity[-1])
+                # Max drawdown
+                peak = np.maximum.accumulate(equity)
+                dd = peak - equity
+                max_dds.append(dd.max())
+
+            final_pnls = np.array(final_pnls)
+            max_dds = np.array(max_dds)
+
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("أفضل سيناريو", f"${np.percentile(final_pnls, 95):+,.0f}")
+            mc2.metric("الوسيط", f"${np.median(final_pnls):+,.0f}")
+            mc3.metric("أسوأ سيناريو", f"${np.percentile(final_pnls, 5):+,.0f}")
+            mc4.metric("أقصى تراجع متوقع", f"${np.median(max_dds):,.0f}")
+
+            # Distribution chart
+            mc_df = pd.DataFrame({"P&L": final_pnls})
+            st.bar_chart(mc_df["P&L"].value_counts(bins=30).sort_index(), use_container_width=True)
+
+            # Risk metrics
+            prob_profit = (final_pnls > 0).mean() * 100
+            prob_big_loss = (final_pnls < -5000).mean() * 100
+
+            st.markdown(f"""
+            <div style="background:#12151C;border-radius:8px;padding:14px 18px;margin-top:8px">
+                <div style="display:flex;gap:32px;font-size:13px">
+                    <span style="color:#4CAF50">احتمال الربح: <b>{prob_profit:.0f}%</b></span>
+                    <span style="color:#F44336">احتمال خسارة > $5K: <b>{prob_big_loss:.0f}%</b></span>
+                    <span style="color:#888">عدد المحاكاة: {n_simulations}</span>
+                    <span style="color:#888">حجم العينة: {n_trades} صفقة</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            st.info(f"تحتاج 10+ صفقات مستقرة للمحاكاة (لديك {len(mc_trades)})")
+
+        st.divider()
+
+        # ─── الشرح (Explanation) ───
+        st.markdown("### ❓ الشرح")
+        st.markdown("""
+        <div style="background:#0D1117;border:1px solid #2D3748;border-radius:8px;padding:16px 20px">
+            <div style="color:#CCC;font-size:13px;line-height:2">
+                <b style="color:#1E88E5">لماذا نفصل النسخ؟</b><br>
+                كل نسخة من المحرك كانت كود مختلف — فلاتر مختلفة، حجم لوت مختلف، إعدادات مختلفة.
+                خلط نتائج نسخة قديمة (لوت 10) مع الحالية (لوت 1) يعطي صورة مضللة تماماً.
+                <br><br>
+                <b style="color:#FF9800">لماذا مونت كارلو؟</b><br>
+                ترتيب الصفقات مهم — 5 خسائر متتالية في البداية تختلف عن 5 خسائر في النهاية.
+                المحاكاة تعيد الترتيب 1000 مرة لتظهر كل السيناريوهات الممكنة بنفس الصفقات.
+                إذا كان أغلب السيناريوهات رابحة = النظام لديه Edge حقيقية.
+                <br><br>
+                <b style="color:#4CAF50">كيف نستخدم هذا؟</b><br>
+                ● إذا احتمال الربح > 60% = النظام يعمل<br>
+                ● إذا أقصى تراجع > 20% من الرصيد = المخاطرة عالية جداً<br>
+                ● إذا أسوأ سيناريو > -$10K = يجب تقليل حجم اللوت<br>
+                ● فقط بيانات STABLE تُستخدم — القديمة للأرشيف فقط
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        conn_t.close()
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل الأداء الأسبوعي: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# TAB 4: تقسيم البيانات (Data Segmentation)
 # ══════════════════════════════════════════════════════════════
 with tab_data:
     st.markdown("""
