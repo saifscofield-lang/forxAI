@@ -102,6 +102,7 @@ class ShadowTracker:
                 spread=ctx.get("spread"),
                 volatility_regime=ctx.get("volatility_regime"),
                 sim_status="OPEN",
+                data_group="STABLE",  # All new signals are STABLE (code frozen since Apr 14)
             )
             session.add(shadow)
             session.commit()
