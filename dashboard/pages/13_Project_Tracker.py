@@ -92,14 +92,28 @@ try:
     conn_t = get_conn(TRADING_DB)
     conn_i = get_conn(IMP_DB)
 
-    # Current phase
-    phase_row = pd.read_sql("SELECT phase_number, name FROM project_phases WHERE status = 'IN_PROGRESS' LIMIT 1", conn_i)
-    current_phase = int(phase_row.iloc[0]["phase_number"]) if not phase_row.empty else 0
-    phase_name = phase_row.iloc[0]["name"] if not phase_row.empty else "---"
+    # Current phase — dynamic from DB, prefers highest-numbered IN_PROGRESS phase
+    # (so v3.0 phase 5 shows over legacy phases if both active)
+    phase_row = pd.read_sql(
+        "SELECT phase_number, name, duration, started_at FROM project_phases "
+        "WHERE status = 'IN_PROGRESS' ORDER BY phase_number DESC LIMIT 1", conn_i)
+    if not phase_row.empty:
+        current_phase = int(phase_row.iloc[0]["phase_number"])
+        phase_name = phase_row.iloc[0]["name"]
+        phase_duration = phase_row.iloc[0]["duration"] or ""
+        phase_started = phase_row.iloc[0]["started_at"]
+    else:
+        current_phase = 0; phase_name = "---"; phase_duration = ""; phase_started = None
 
-    # Paper day
-    phase1_start = datetime(2026, 3, 31, tzinfo=timezone.utc)
-    paper_day = max(1, (datetime.now(timezone.utc) - phase1_start).days + 1)
+    # Day counter — dynamic: days since current phase started
+    if phase_started:
+        try:
+            started_dt = datetime.fromisoformat(phase_started).replace(tzinfo=timezone.utc)
+            phase_day = max(1, (datetime.now(timezone.utc) - started_dt).days + 1)
+        except Exception:
+            phase_day = 1
+    else:
+        phase_day = 1
 
     # Balance
     acc = pd.read_sql("SELECT balance FROM account_snapshots ORDER BY time DESC LIMIT 1", conn_t)
@@ -117,8 +131,8 @@ try:
     c1.metric("المرحلة الحالية", f"Phase {current_phase}", phase_name)
     c2.metric("الرصيد", f"${balance:,.0f}", f"${delta:+,.0f} من خط الأساس")
     c3.metric("إشارات الظل", f"{shadow_total}", f"{stable_count} مستقرة")
-    c4.metric("تجميد الكود", "14 يوم", "Apr 14 - Apr 28")
-    c5.metric("الهدف", "200+ مستقرة", f"{stable_count}/200")
+    c4.metric("نافذة المرحلة", f"يوم {phase_day}", phase_duration or "—")
+    c5.metric("الهدف", "150+ مستقرة", f"{stable_count}/150")
 
     conn_t.close()
     conn_i.close()
