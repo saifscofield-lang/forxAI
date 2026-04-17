@@ -8,6 +8,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 st.set_page_config(page_title="متتبع المشروع", page_icon="📋", layout="wide")
 
@@ -1064,6 +1065,91 @@ with tab_metalabel:
 
     except Exception as e:
         st.error(f"خطأ في تحميل expectancy: {e}")
+
+    # ─── TSMOM section (same tab) ───
+    st.divider()
+    st.markdown("### 📈 TSMOM Prototype — Layer 3")
+    st.markdown("""
+    <div style="color:#888;font-size:12px;margin-bottom:8px">
+        استراتيجية Time-Series Momentum (Moskowitz/Ooi/Pedersen 2012, AQR 2017). شهرية، لا ML.
+        <br/>القاعدة: إذا السعر الحالي > السعر قبل 12 شهراً → LONG. حجم الصفقة = target_vol / realized_vol. AQR benchmark: Sharpe ~0.7، عائد سنوي ~10%.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn = get_conn(IMP_DB)
+        tsmom = pd.read_sql("""
+            SELECT run_time, scope, n_months, start_date, end_date,
+                   annual_return, annual_vol, sharpe, sortino, max_drawdown,
+                   hit_rate_monthly, cagr, verdict
+            FROM tsmom_runs
+            ORDER BY run_time DESC
+        """, conn)
+        conn.close()
+
+        if tsmom.empty:
+            st.info("لم تُشغَّل TSMOM prototype بعد. شغّل scripts/research_tsmom_prototype.py")
+        else:
+            latest_tsmom_time = tsmom["run_time"].max()
+            latest_tsmom = tsmom[tsmom["run_time"] == latest_tsmom_time]
+
+            # Portfolio row first
+            port = latest_tsmom[latest_tsmom["scope"] == "portfolio_equal_weight"]
+            pairs_rows = latest_tsmom[latest_tsmom["scope"] != "portfolio_equal_weight"]
+
+            if not port.empty:
+                p = port.iloc[0]
+                st.markdown(f"**محفظة (equal-weight) — {p['verdict']}**")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Sharpe", f"{p['sharpe']:.2f}", f"AQR: ~0.70")
+                c2.metric("عائد سنوي", f"{p['annual_return']*100:+.1f}%", f"AQR: ~10%")
+                c3.metric("Max DD", f"{p['max_drawdown']*100:.1f}%", f"AQR: ~-25%")
+                c4.metric("CAGR", f"{p['cagr']*100:.2f}%")
+                st.caption(f"{p['start_date']} → {p['end_date']} · {p['n_months']} شهر · hit rate {p['hit_rate_monthly']*100:.1f}%")
+
+            if not pairs_rows.empty:
+                st.markdown("**نتائج كل زوج على حدة:**")
+                disp = pairs_rows[[
+                    "scope", "n_months", "annual_return", "annual_vol",
+                    "sharpe", "max_drawdown", "hit_rate_monthly", "verdict",
+                ]].copy()
+                disp.columns = ["Pair", "Months", "Ann Ret", "Ann Vol",
+                                "Sharpe", "Max DD", "Hit%", "Verdict"]
+                disp["Ann Ret"] = disp["Ann Ret"].apply(lambda x: f"{x*100:+.1f}%")
+                disp["Ann Vol"] = disp["Ann Vol"].apply(lambda x: f"{x*100:.1f}%")
+                disp["Sharpe"] = disp["Sharpe"].apply(lambda x: f"{x:+.2f}")
+                disp["Max DD"] = disp["Max DD"].apply(lambda x: f"{x*100:.1f}%")
+                disp["Hit%"] = disp["Hit%"].apply(lambda x: f"{x*100:.0f}%")
+                st.dataframe(disp, use_container_width=True, hide_index=True)
+
+            # Equity curve chart
+            chart_path = Path("docs/research/tsmom_equity_curve.png")
+            if chart_path.exists():
+                st.markdown("**Equity curve:**")
+                st.image(str(chart_path))
+
+            # Auto-interpretation
+            if not port.empty:
+                sharpe = port.iloc[0]["sharpe"]
+                if sharpe >= 0.5:
+                    st.success(
+                        f"**TSMOM قابلة للاستخدام** (Sharpe {sharpe:.2f}). "
+                        "يستحق البناء كطبقة موازية في Phase 6."
+                    )
+                elif sharpe >= 0.3:
+                    st.warning(
+                        f"**TSMOM ضعيفة** (Sharpe {sharpe:.2f}) — لكن بعض الأزواج فردياً "
+                        "لها Sharpe أعلى. راجع per-pair جدول أعلاه."
+                    )
+                else:
+                    st.error(
+                        f"**TSMOM فاشلة** على هذه البيانات (Sharpe {sharpe:.2f} ضد AQR 0.7). "
+                        "السبب المحتمل: 7 أزواج USD-centric لا توفّر diversification كافي "
+                        "مقارنة بـ 67 سوق في أبحاث AQR. **Option C (TSMOM-only) خارج الطاولة.**"
+                    )
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل TSMOM: {e}")
 
 
 # ══════════════════════════════════════════════════════════════
