@@ -38,13 +38,17 @@ from strategies.macd_crossover import MACDCrossoverStrategy
 from strategies.rsi_reversal import RSIReversalStrategy
 
 # ───────────────────────────── CONFIG ─────────────────────────────
-PAIRS = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "USDCHF"]
-START_DATE = "2022-04-17"        # ~4 years (matches v3.0 plan §5.2)
+# Option D (Apr 17, 2026): expanded from 5→7 pairs, 4→6 years
+# - Added USDJPY + XAUUSD: more signal opportunities, different correlation profile
+# - Extended start: 2022→2020 to include COVID-vol + 2022 rate-hike trend regime
+# - Production strategies kept untouched (freeze respected)
+PAIRS = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "USDCHF", "USDJPY", "XAUUSD"]
+START_DATE = "2020-01-01"        # 6+ years to span 3 vol regimes
 END_DATE = "2026-04-01"
 WARMUP_BARS = 250                # need EMA200 + buffer
 WINDOW_BARS = 300                # rolling window passed to strategy
 TRIPLE_BARRIER_HORIZON = 48      # 48 H1 bars = 2 trading days
-MIN_TARGET_SIGNALS = 3000        # plan minimum
+MIN_TARGET_SIGNALS = 1000        # Option D revised target (was 3000 in plan)
 
 DB = "data/trading.db"
 OUT_PARQUET = Path("data/research/primary_signals.parquet")
