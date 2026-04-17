@@ -144,12 +144,13 @@ st.divider()
 # ══════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════
-tab_phases, tab_state, tab_weekly, tab_data, tab_regime, tab_decisions, tab_improvements, tab_shadow = st.tabs([
+tab_phases, tab_state, tab_weekly, tab_data, tab_regime, tab_metalabel, tab_decisions, tab_improvements, tab_shadow = st.tabs([
     "📊 المراحل",
     "⚡ حالة النظام",
     "📈 راقب الأداء",
     "📦 تقسيم البيانات",
     "🎯 تحليل الأنظمة",
+    "🧠 Meta-Labeler",
     "📝 سجل القرارات",
     "🔧 التحسينات",
     "👁 التداول الظلي",
@@ -854,6 +855,121 @@ with tab_regime:
 
     except Exception as e:
         st.error(f"خطأ في تحميل تحليل الأنظمة: {e}")
+
+
+# ══════════════════════════════════════════════════════════════
+# TAB: Meta-Labeler Prototype Results
+# ══════════════════════════════════════════════════════════════
+with tab_metalabel:
+    st.markdown("""
+    <div style="color:#888;font-size:13px;margin-bottom:16px">
+        نتائج prototype الـ Meta-Labeler على 1,144 إشارة أولية. كل تشغيل يختبر architecture مختلف (global / per-strategy / per-combo).
+        <br/><b style="color:#FF9800">كيف تقرأ:</b> AUC ≥ 0.55 = model له إشارة حقيقية. WR lift ≥ 5 نقاط = يستحق التعقيد.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn = get_conn(IMP_DB)
+        runs = pd.read_sql("""
+            SELECT run_time, architecture, scope, n_signals, n_features,
+                   auc_mean, auc_std, baseline_wr, lifted_wr, wr_lift_points,
+                   precision_mean, recall_mean, f1_mean, verdict, notes
+            FROM meta_labeler_runs
+            ORDER BY run_time DESC, architecture, scope
+        """, conn)
+        conn.close()
+
+        if runs.empty:
+            st.info("لم تُشغَّل نماذج meta-labeler بعد. شغّل scripts/research_meta_labeler_prototype.py")
+        else:
+            # Latest run summary
+            latest_time = runs["run_time"].max()
+            latest = runs[runs["run_time"] == latest_time]
+
+            st.markdown(f"**آخر تشغيل:** {latest_time} — {len(latest)} نموذج")
+
+            # Top-line metrics
+            best = latest.loc[latest["wr_lift_points"].idxmax()]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("أفضل Architecture", best["architecture"])
+            c2.metric("أفضل Scope", best["scope"])
+            c3.metric("AUC", f"{best['auc_mean']:.3f}" if pd.notna(best['auc_mean']) else "—")
+            c4.metric("WR Lift", f"{best['wr_lift_points']:+.1f}pp",
+                      f"{best['baseline_wr']:.1f}% → {best['lifted_wr']:.1f}%")
+
+            st.divider()
+
+            # Results by architecture
+            for arch in ["GLOBAL", "PER_STRATEGY", "PER_COMBO"]:
+                arch_rows = latest[latest["architecture"] == arch]
+                if arch_rows.empty:
+                    continue
+
+                arch_desc = {
+                    "GLOBAL": "نموذج واحد لكل الإشارات",
+                    "PER_STRATEGY": "نموذج منفصل لكل استراتيجية (MACD / RSI)",
+                    "PER_COMBO": "نموذج لكل (استراتيجية × زوج) — يتطلب ≥80 عينة",
+                }.get(arch, "")
+                st.markdown(f"### {arch}")
+                st.caption(arch_desc)
+
+                display = arch_rows[[
+                    "scope", "n_signals", "auc_mean", "auc_std",
+                    "baseline_wr", "lifted_wr", "wr_lift_points", "verdict",
+                ]].copy()
+                display.columns = [
+                    "Scope", "N", "AUC", "AUC std",
+                    "Raw WR", "Filtered WR", "Lift (pp)", "Verdict",
+                ]
+                display["AUC"] = display["AUC"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+                display["AUC std"] = display["AUC std"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+                display["Raw WR"] = display["Raw WR"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+                display["Filtered WR"] = display["Filtered WR"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+                display["Lift (pp)"] = display["Lift (pp)"].apply(lambda x: f"{x:+.1f}" if pd.notna(x) else "—")
+
+                st.dataframe(display, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # Historical runs expander (if more than one run)
+            all_times = runs["run_time"].unique()
+            if len(all_times) > 1:
+                with st.expander(f"📜 كل التشغيلات السابقة ({len(all_times)} runs)"):
+                    st.dataframe(
+                        runs[["run_time", "architecture", "scope", "auc_mean",
+                              "wr_lift_points", "verdict"]],
+                        use_container_width=True, hide_index=True,
+                    )
+
+            # Interpretation box
+            strong = (latest["verdict"].str.contains("STRONG", na=False)).sum()
+            weak = (latest["verdict"].str.contains("WEAK", na=False)).sum()
+            marginal = (latest["verdict"].str.contains("MARGINAL", na=False)).sum()
+            none_n = (latest["verdict"].str.contains("NONE", na=False)).sum()
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("✅ Strong", strong)
+            c2.metric("⚠️ Weak", weak)
+            c3.metric("❌ Marginal", marginal)
+            c4.metric("❌ None", none_n)
+
+            if strong > 0:
+                st.success(
+                    f"**الخلاصة**: {strong} architecture ناجح. هذا هو نقطة انطلاق Phase 7. "
+                    f"التقرير الكامل: `docs/research/meta_labeler_prototype.md`"
+                )
+            elif weak > 0:
+                st.warning(
+                    f"**الخلاصة**: فقط {weak} architecture ضعيف. يمكن المتابعة لكن مع توقعات أقل "
+                    f"(Sharpe lift 5-10% بدلاً من 30%)."
+                )
+            else:
+                st.error(
+                    "**الخلاصة**: لا يوجد architecture ناجح. راجع feature set أو labels قبل Phase 7."
+                )
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل نتائج meta-labeler: {e}")
 
 
 # ══════════════════════════════════════════════════════════════
