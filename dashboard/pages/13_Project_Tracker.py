@@ -971,6 +971,100 @@ with tab_metalabel:
     except Exception as e:
         st.error(f"خطأ في تحميل نتائج meta-labeler: {e}")
 
+    # ─── Expectancy section (same tab) ───
+    st.divider()
+    st.markdown("### 💰 Expectancy per صفقة")
+    st.markdown("""
+    <div style="color:#888;font-size:12px;margin-bottom:8px">
+        Expectancy = (WR × متوسط الربح) − ((1−WR) × متوسط الخسارة) — الرقم الحقيقي الذي يحدد إذا كانت الاستراتيجية تكسب أو تخسر.
+        <br/>WR عالية لا تكفي. ml_direct كان WR=75.7% وخسر $33,907.
+    </div>
+    """, unsafe_allow_html=True)
+
+    try:
+        conn = get_conn(IMP_DB)
+        exp = pd.read_sql("""
+            SELECT run_time, source, strategy, symbol, scope_label,
+                   n_signals, wr_pct, avg_win, avg_loss, rr_ratio,
+                   expectancy_per_signal, unit, extras
+            FROM expectancy_analysis
+            ORDER BY run_time DESC
+        """, conn)
+        conn.close()
+
+        if exp.empty:
+            st.info("لم تُشغَّل تحليل expectancy بعد. شغّل scripts/research_expectancy.py")
+        else:
+            latest_exp_time = exp["run_time"].max()
+            latest_exp = exp[exp["run_time"] == latest_exp_time]
+
+            st.caption(f"آخر تشغيل: {latest_exp_time}  ·  {len(latest_exp)} سجل")
+
+            # Backtest per-pair
+            bt_per_pair = latest_exp[
+                (latest_exp["source"] == "backtest") & latest_exp["symbol"].notna()
+            ].copy()
+            if not bt_per_pair.empty:
+                bt_per_pair = bt_per_pair.sort_values("expectancy_per_signal", ascending=False)
+                st.markdown("**Backtest — (strategy × pair)** · وحدة: pips per signal")
+                disp = bt_per_pair[[
+                    "strategy", "symbol", "n_signals", "wr_pct", "rr_ratio",
+                    "expectancy_per_signal",
+                ]].copy()
+                disp.columns = ["Strategy", "Pair", "N", "WR", "RR", "Exp (pips/signal)"]
+                disp["WR"] = disp["WR"].apply(lambda x: f"{x:.1f}%")
+                disp["RR"] = disp["RR"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+                disp["Exp (pips/signal)"] = disp["Exp (pips/signal)"].apply(lambda x: f"{x:+.1f}")
+                st.dataframe(disp, use_container_width=True, hide_index=True)
+
+            # Live expectancy — top winners + bottom losers
+            live_exp = latest_exp[latest_exp["source"] == "live"].copy()
+            if not live_exp.empty:
+                live_exp = live_exp.sort_values("expectancy_per_signal", ascending=False)
+                st.markdown("**Live trades — Top 10 رابحة**  ($ per trade)")
+                top = live_exp.head(10)[[
+                    "strategy", "symbol", "n_signals", "wr_pct", "rr_ratio",
+                    "expectancy_per_signal",
+                ]].copy()
+                top.columns = ["Strategy", "Pair", "N", "WR", "RR", "$/trade"]
+                top["WR"] = top["WR"].apply(lambda x: f"{x:.0f}%")
+                top["RR"] = top["RR"].apply(lambda x: f"{x:.2f}" if pd.notna(x) and x < 100 else "∞")
+                top["$/trade"] = top["$/trade"].apply(lambda x: f"${x:+,.0f}")
+                st.dataframe(top, use_container_width=True, hide_index=True)
+
+                st.markdown("**Live trades — Bottom 10 خاسرة**")
+                bot = live_exp.tail(10)[[
+                    "strategy", "symbol", "n_signals", "wr_pct", "rr_ratio",
+                    "expectancy_per_signal",
+                ]].copy()
+                bot.columns = ["Strategy", "Pair", "N", "WR", "RR", "$/trade"]
+                bot["WR"] = bot["WR"].apply(lambda x: f"{x:.0f}%")
+                bot["RR"] = bot["RR"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+                bot["$/trade"] = bot["$/trade"].apply(lambda x: f"${x:+,.0f}")
+                st.dataframe(bot, use_container_width=True, hide_index=True)
+
+            # Meta-filtered row
+            meta = latest_exp[latest_exp["source"] == "meta_filtered"]
+            if not meta.empty:
+                row = meta.iloc[0]
+                st.markdown("**Meta-filtered RSI impact**")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Keep-rate", row["extras"].split("keep_rate=")[1].split(",")[0] if "keep_rate" in str(row["extras"]) else "—")
+                c2.metric("Filtered WR", f"{row['wr_pct']:.1f}%")
+                c3.metric("Filtered Exp", f"{row['expectancy_per_signal']:+.1f} pips")
+
+            # Sobering takeaway
+            n_positive = (bt_per_pair["expectancy_per_signal"] > 0).sum() if not bt_per_pair.empty else 0
+            n_combos = len(bt_per_pair) if not bt_per_pair.empty else 0
+            if n_positive < n_combos / 2:
+                st.error(
+                    f"⚠️ **تحذير**: فقط {n_positive}/{n_combos} combo لها expectancy موجبة في backtest. "
+                    "النظام هش أكثر مما تبدو metrics الفوز. راجع docs/research/expectancy_report.md"
+                )
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل expectancy: {e}")
+
 
 # ══════════════════════════════════════════════════════════════
 # TAB 4: سجل القرارات
