@@ -192,6 +192,11 @@ with tab_phases:
                 7: "Meta-Labeler Rebuild (May 4 - Jun 8) — Triple Barrier + Purged K-Fold + LightGBM filter. ML يصفّي بدلاً من التنبؤ",
                 8: "v3.0 Paper Trading (Jun 8 - Jul 20) — 6 أسابيع على demo، تجميد كود في آخر 14 يوم، gate صارم قبل live",
                 9: "v3.0 Live Trading (Sep 1+) — تخطّي أغسطس (سيولة منخفضة)، بدء $2,000 فقط، 0.3% risk → 0.5% تدريجياً",
+                10: "v4 Research — Crypto Momentum (TBD) — أول track من v4: اختبار BTC/ETH/SOL momentum على ccxt مجاناً قبل استثمار في infra كاملة. نقطة خروج: Sharpe < 0.4 بعد costs",
+                11: "v4 Strategy Expansion (TBD) — 4-5 استراتيجيات غير مرتبطة (crypto + commodity + VIX + small-cap). هدف: portfolio Sharpe 0.5-0.7 بعد correlation benefits",
+                12: "v4 Infrastructure Migration (TBD) — IBKR + ccxt + TimescaleDB + Grafana. ~$300-600/شهر. يبدأ بعد إثبات edge في Phase 10+11",
+                13: "v4 Paper Trading (TBD) — ≥ 90 يوم paper، walk-forward + Purged CV، stress test على 2008/2020/2022 — رفض أي نموذج يفشل",
+                14: "v4 Live Deployment (TBD) — بدء بـ $5-10K، توسيع تدريجي. الهدف: Sharpe 0.5-0.7، $50-100K خلال 3-5 سنوات",
             }
 
             PHASE_WHY = {
@@ -205,6 +210,11 @@ with tab_phases:
                 7: "ML الحالي يتنبأ بالاتجاه (دقة 34-46% = أقل من تعادل). Meta-Labeling يحوّله إلى مصفّي ثنائي (trade/skip) يرفع Sharpe بـ 30-50%",
                 8: "اختبار حقيقي على demo قبل live. الـ 13 تغيير في 10 أيام درس مكلف — تجميد كود لأسبوعين شرط لازم قبل أي ship",
                 9: "أغسطس أسوأ شهر سيولة في السنة. بدء $2,000 حقيقي في widest spreads = خسارة نفسية قد تنهي المشروع. Sep 1 = سيولة طبيعية",
+                10: "v3.0 ceiling أثبت أن FX H1 لا يعطي Sharpe > 0.5. v4 يحتاج playing field مختلف. crypto momentum أرخص وأغنى بيانات — نختبره أولاً قبل $300-600/شهر infra",
+                11: "portfolio من 5 استراتيجيات Sharpe 0.5 غير مرتبطة = Sharpe 0.8. هذا هو edge الـ quants الحقيقي، ليس signal perfection",
+                12: "IBKR + crypto + alt data تتطلب infra جديدة بالكامل. تأجيل حتى إثبات edge في 2+ استراتيجية — لا ندفع قبل الإثبات",
+                13: "Phase 8 في v3.0 أثبت أن 4-6 أسابيع paper غير كافية. v4 يحتاج 90 يوم لاستيعاب regime shifts + stress tests على 2008/2020/2022",
+                14: "capital غير متوفر للتوسع. بدء $5-10K فقط. scaling تدريجي على 3-5 سنوات مع تراكم capital من خارج التداول",
             }
 
             STATUS_AR = {"COMPLETED": "مكتمل", "IN_PROGRESS": "جاري", "NOT_STARTED": "لم يبدأ"}
