@@ -171,7 +171,69 @@ with tab_phases:
 
     try:
         conn = get_conn(IMP_DB)
-        phases = pd.read_sql("SELECT * FROM project_phases ORDER BY phase_number", conn)
+        # Order 105 (encoding for "10.5") right after phase 10
+        phases = pd.read_sql(
+            "SELECT * FROM project_phases "
+            "ORDER BY CASE WHEN phase_number = 105 THEN 10.5 ELSE phase_number END",
+            conn,
+        )
+
+        # ── Recent Decisions widget ──────────────────────────────────────
+        try:
+            decisions = pd.read_sql(
+                "SELECT phase_number, decision_date, verdict, gates_passed, gates_total, next_action "
+                "FROM go_no_go_decisions ORDER BY decision_date DESC, id DESC LIMIT 3",
+                conn,
+            )
+            if not decisions.empty:
+                st.markdown("**آخر القرارات / Recent Decisions**")
+                for _, d in decisions.iterrows():
+                    pill_bg = {"GREEN": "#0D2818", "YELLOW": "#2B2410", "RED": "#2D1111"}.get(d["verdict"], "#222")
+                    pill_border = {"GREEN": "#1B5E20", "YELLOW": "#6B5A1A", "RED": "#B71C1C"}.get(d["verdict"], "#555")
+                    pill_color = {"GREEN": "#4CAF50", "YELLOW": "#FFCA28", "RED": "#EF5350"}.get(d["verdict"], "#AAA")
+                    p_display = "10.5" if int(d["phase_number"]) == 105 else str(int(d["phase_number"]))
+                    st.markdown(
+                        f"<div style='background:#12151C;border-radius:8px;padding:10px 14px;margin-bottom:6px;"
+                        f"border-left:3px solid {pill_color}'>"
+                        f"<div style='display:flex;gap:12px;align-items:baseline;margin-bottom:4px'>"
+                        f"<span style='background:{pill_bg};color:{pill_color};border:1px solid {pill_border};"
+                        f"border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700'>{d['verdict']}</span>"
+                        f"<span style='color:#CCC;font-size:13px'>Phase {p_display}</span>"
+                        f"<span style='color:#888;font-size:12px'>{d['decision_date']}</span>"
+                        f"<span style='color:#AAA;font-size:12px;margin-left:auto'>"
+                        f"gates {d['gates_passed'] or 0}/{d['gates_total'] or 0}</span>"
+                        f"</div>"
+                        f"<div style='color:#AAA;font-size:12px'>→ {d['next_action']}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+        except Exception:
+            pass  # go_no_go_decisions table may not exist on older DBs
+
+        # ── Critical Path widget ─────────────────────────────────────────
+        try:
+            active_phase = phases[phases["status"] == "IN_PROGRESS"].sort_values("phase_number", ascending=False).head(1)
+            if not active_phase.empty:
+                ap = active_phase.iloc[0]
+                pending = pd.read_sql(
+                    f"SELECT step_order, description FROM phase_steps WHERE phase_number = {int(ap['phase_number'])} "
+                    f"AND status = 'PENDING' ORDER BY step_order LIMIT 3",
+                    conn,
+                )
+                if not pending.empty:
+                    ap_display = "10.5" if int(ap["phase_number"]) == 105 else str(int(ap["phase_number"]))
+                    next_blocker = pending.iloc[0]
+                    st.markdown(
+                        f"<div style='background:#12151C;border:1px dashed #444;border-radius:8px;padding:10px 14px;margin:10px 0'>"
+                        f"<div style='color:#FF9800;font-weight:700;font-size:13px;margin-bottom:4px'>"
+                        f"المسار الحرج / Critical Path — Phase {ap_display}</div>"
+                        f"<div style='color:#CCC;font-size:13px'>Next blocker: Step {next_blocker['step_order']} — {next_blocker['description'][:90]}</div>"
+                        f"<div style='color:#888;font-size:12px;margin-top:4px'>{len(pending)} pending step(s) in this phase</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+        except Exception:
+            pass
 
         if not phases.empty:
             # Progress bar
@@ -197,6 +259,7 @@ with tab_phases:
                 12: "v4 Infrastructure Migration (TBD) — IBKR + ccxt + TimescaleDB + Grafana. ~$300-600/شهر. يبدأ بعد إثبات edge في Phase 10+11",
                 13: "v4 Paper Trading (TBD) — ≥ 90 يوم paper، walk-forward + Purged CV، stress test على 2008/2020/2022 — رفض أي نموذج يفشل",
                 14: "v4 Live Deployment (TBD) — بدء بـ $5-10K، توسيع تدريجي. الهدف: Sharpe 0.5-0.7، $50-100K خلال 3-5 سنوات",
+                105: "Phase 10.5 — TSMOM Crypto with Regime Filter (Rescue) — إضافة فلتر نظام (عتبة تقلب أو كاشف ارتفاع ترابط) فوق إشارة TSMOM LO/12w. إعادة تشغيل OOS. شرط النجاح: gated OOS Sharpe > 0.4",
             }
 
             PHASE_WHY = {
@@ -215,25 +278,63 @@ with tab_phases:
                 12: "IBKR + crypto + alt data تتطلب infra جديدة بالكامل. تأجيل حتى إثبات edge في 2+ استراتيجية — لا ندفع قبل الإثبات",
                 13: "Phase 8 في v3.0 أثبت أن 4-6 أسابيع paper غير كافية. v4 يحتاج 90 يوم لاستيعاب regime shifts + stress tests على 2008/2020/2022",
                 14: "capital غير متوفر للتوسع. بدء $5-10K فقط. scaling تدريجي على 3-5 سنوات مع تراكم capital من خارج التداول",
+                105: "Phase 10 OOS (step 4) فشل gate الاستقرار (drift 0.57-0.98). Step 5 أظهر ترابط منخفض مع FX (0.13) وS&P (0.21) — الاستراتيجية تنوّع بحق. فلتر النظام = محاولة إنقاذ قبل رفض v4. نجح → Phase 11. فشل → pivot",
             }
 
-            STATUS_AR = {"COMPLETED": "مكتمل", "IN_PROGRESS": "جاري", "NOT_STARTED": "لم يبدأ"}
+            STATUS_AR = {
+                "COMPLETED": "مكتمل", "IN_PROGRESS": "جاري", "NOT_STARTED": "لم يبدأ",
+                "PENDING_ACTIVATION": "بانتظار التفعيل",
+            }
+
+            # Cache decisions by phase_number for verdict badges
+            try:
+                decisions_by_phase = pd.read_sql(
+                    "SELECT phase_number, verdict, gates_passed, gates_total "
+                    "FROM go_no_go_decisions ORDER BY decision_date DESC, id DESC",
+                    conn,
+                ).drop_duplicates(subset=["phase_number"], keep="first").set_index("phase_number").to_dict("index")
+            except Exception:
+                decisions_by_phase = {}
 
             for _, phase in phases.iterrows():
                 pn = int(phase["phase_number"])
+                pn_display = "10.5" if pn == 105 else str(pn)
                 status = phase["status"]
-                css_class = "phase-done" if status == "COMPLETED" else ("phase-active" if status == "IN_PROGRESS" else "phase-pending")
-                status_color = "#4CAF50" if status == "COMPLETED" else ("#FF9800" if status == "IN_PROGRESS" else "#555")
+                if status == "COMPLETED":
+                    css_class = "phase-done"
+                    status_color = "#4CAF50"
+                    icon = "✅"
+                elif status == "IN_PROGRESS":
+                    css_class = "phase-active"
+                    status_color = "#FF9800"
+                    icon = "🔶"
+                elif status == "PENDING_ACTIVATION":
+                    css_class = "phase-pending"
+                    status_color = "#FFCA28"
+                    icon = "⏸"
+                else:
+                    css_class = "phase-pending"
+                    status_color = "#555"
+                    icon = "⬜"
 
                 # Steps
                 steps = pd.read_sql(f"SELECT * FROM phase_steps WHERE phase_number = {pn} ORDER BY step_order", conn)
                 steps_done = len(steps[steps["status"] == "COMPLETED"]) if not steps.empty else 0
                 steps_total = len(steps)
 
+                # Verdict badge (if a go/no-go decision exists for this phase)
+                verdict_info = decisions_by_phase.get(pn, {})
+                verdict = verdict_info.get("verdict")
+                badge_str = ""
+                if verdict:
+                    badge_bg = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}.get(verdict, "⚪")
+                    g_pass = verdict_info.get("gates_passed") or 0
+                    g_total = verdict_info.get("gates_total") or 0
+                    badge_str = f"  {badge_bg} {verdict} ({g_pass}/{g_total})"
+
                 with st.expander(
-                    f"{'✅' if status == 'COMPLETED' else ('🔶' if status == 'IN_PROGRESS' else '⬜')} "
-                    f"المرحلة {pn} — {phase['name']}  ({STATUS_AR.get(status, status)})",
-                    expanded=(status == "IN_PROGRESS"),
+                    f"{icon} المرحلة {pn_display} — {phase['name']}  ({STATUS_AR.get(status, status)}){badge_str}",
+                    expanded=(status in ("IN_PROGRESS", "PENDING_ACTIVATION") and pn in (10, 105, 5)),
                 ):
                     # Description and why
                     st.markdown(f"""
@@ -277,6 +378,14 @@ with tab_phases:
 # TAB 2: حالة النظام
 # ══════════════════════════════════════════════════════════════
 with tab_state:
+    # v3 STABLE banner — context for v4 OOS situation
+    st.markdown("""
+    <div style="background:#12181D;border-left:4px solid #4CAF50;border-radius:6px;padding:10px 14px;margin-bottom:12px">
+        <div style="color:#4CAF50;font-weight:700;font-size:13px;margin-bottom:2px">v3 STABLE — paper trading يستمر</div>
+        <div style="color:#CCC;font-size:12px">v4 دخل OOS validation (Phase 10 step 4 — RED). v3 paper trading يستمر بدون تغيير حتى اجتماع go/no-go في 2026-04-28.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("""
     <div style="color:#888;font-size:13px;margin-bottom:16px">
         لوحة مراقبة حية لحالة النظام — الرصيد، الصفقات، الاستراتيجيات النشطة، ومؤشرات الأداء.

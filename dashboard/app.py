@@ -212,6 +212,53 @@ with st.sidebar:
 
     st.divider()
 
+    # ── v3 / v4 status pill (auto-refreshes from DB) ─────────────────────
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _get_version_status():
+        import sqlite3
+        v3_label = "STABLE"
+        v4_label = "not started"
+        v4_color = "#666"
+        try:
+            con = sqlite3.connect("data/improvements.db")
+            # v4 verdict from latest go_no_go_decisions row for phase 10
+            cur = con.execute(
+                "SELECT verdict, gates_passed, gates_total FROM go_no_go_decisions "
+                "WHERE phase_number = 10 ORDER BY decision_date DESC, id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            # Phase 10.5 activation state (encoded as 105)
+            cur = con.execute("SELECT status FROM project_phases WHERE phase_number = 105")
+            p105 = cur.fetchone()
+            con.close()
+            if row:
+                verdict, gp, gt = row
+                v4_label = f"{verdict} ({gp or 0}/{gt or 0})"
+                v4_color = {"GREEN": "#4CAF50", "YELLOW": "#FFCA28", "RED": "#EF5350"}.get(verdict, "#666")
+                if p105 and p105[0] == "PENDING_ACTIVATION":
+                    v4_label += " — Phase 10.5 candidate"
+        except Exception:
+            pass
+        return v3_label, v4_label, v4_color
+
+    try:
+        v3_lbl, v4_lbl, v4_clr = _get_version_status()
+        st.markdown(
+            f"<div style='background:#0D1117;border:1px solid #2D3748;border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:12px'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+            f"<span style='color:#888'>v3</span>"
+            f"<span style='color:#4CAF50;font-weight:600'>{v3_lbl}</span>"
+            f"</div>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-top:4px'>"
+            f"<span style='color:#888'>v4</span>"
+            f"<span style='color:{v4_clr};font-weight:600;font-size:11px'>{v4_lbl}</span>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
+
     st.caption(f"{now_utc.strftime('%H:%M:%S')} UTC")
 
     if st.button("تحديث البيانات", use_container_width=True):

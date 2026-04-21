@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Algorithmic forex trading platform connecting to MetaTrader 5 via Python. Paper trading mode on a MetaQuotes demo account. Phase 0-1 complete (indicators, strategy, risk, engine); Phase 2 next (backtesting, ML, analytics).
 
+**Current state (2026-04-21):** v3 (engine v2.4) is the running STABLE segment on MT5 demo. v4 Phase 10 crypto-momentum research is at step 5 of 8 complete — OOS validation RED (both LO/12m and LO/12w fail the drift-stability gate; LO/12w passes 3 of 4 OOS gates). Correlation analysis confirmed v4 diversifies from the FX book (ρ=0.13). Phase 10.5 (regime-filter rescue) seeded as `PENDING_ACTIVATION`. Formal go/no-go decision deferred. v3 paper trading continues through the 2026-04-28 go/no-go meeting.
+
 **Windows-only** — the MT5 Python API only works on Windows. MT5 Terminal must be installed and running locally.
 
 ## Environment Setup

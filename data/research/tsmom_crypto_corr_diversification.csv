@@ -1,0 +1,3 @@
+window,portfolio_vol_ann,weighted_asset_vol_ann,diversification_ratio,mean_gross_exposure
+full,0.0697,0.0652,0.936,0.077
+oos,0.066,0.047,0.712,0.093

@@ -14,6 +14,9 @@ data/raw/
 data/processed/
 data/models/
 
+# نسخ احتياطية لقاعدة بيانات التتبع
+data/improvements.db.bak.*
+
 # ملفات Python
 *.egg-info/
 dist/
