@@ -1,0 +1,458 @@
+{
+  "generated": "2026-04-28T20:24:52Z",
+  "section_1_account": {
+    "section": 1,
+    "connected": true,
+    "account": {
+      "login": 5047751974,
+      "server": "MetaQuotes-Demo",
+      "trade_mode": 0,
+      "leverage": 100,
+      "currency": "USD",
+      "balance": 110632.13,
+      "equity": 110329.69,
+      "margin": 5593.78,
+      "margin_free": 104735.91,
+      "margin_level": 1972.3637683283937,
+      "margin_so_call": 50.0,
+      "margin_so_so": 30.0,
+      "trade_allowed": true,
+      "company": "MetaQuotes Ltd."
+    },
+    "symbols": {
+      "EURUSD": {
+        "point": 1e-05,
+        "tick_size": 1e-05,
+        "tick_value": 1.0,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": -0.7,
+        "swap_short": -1.0,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 14
+      },
+      "GBPUSD": {
+        "point": 1e-05,
+        "tick_size": 1e-05,
+        "tick_value": 1.0,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": -0.2,
+        "swap_short": -2.2,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 9
+      },
+      "USDJPY": {
+        "point": 0.001,
+        "tick_size": 0.001,
+        "tick_value": 0.6264604358911713,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": -0.1,
+        "swap_short": -0.6,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 7
+      },
+      "XAUUSD": {
+        "point": 0.01,
+        "tick_size": 0.01,
+        "tick_value": 0.1,
+        "contract_size": 100.0,
+        "volume_min": 0.01,
+        "volume_max": 100.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": -12.6,
+        "swap_short": -4.6,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 3,
+        "spread": 17
+      },
+      "AUDUSD": {
+        "point": 1e-05,
+        "tick_size": 1e-05,
+        "tick_value": 1.0,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": 6.3,
+        "swap_short": -14.8,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 9
+      },
+      "USDCAD": {
+        "point": 1e-05,
+        "tick_size": 1e-05,
+        "tick_value": 0.7305936073059363,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": -0.8,
+        "swap_short": -0.4,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 9
+      },
+      "USDCHF": {
+        "point": 1e-05,
+        "tick_size": 1e-05,
+        "tick_value": 1.2670096039327978,
+        "contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 500.0,
+        "volume_step": 0.01,
+        "margin_initial": 0.0,
+        "margin_maintenance": 0.0,
+        "swap_long": 0.1,
+        "swap_short": -1.0,
+        "swap_rollover3days": 3,
+        "trade_mode": 4,
+        "filling_mode": 1,
+        "spread": 12
+      }
+    },
+    "clock_drift_seconds": 10790.4
+  },
+  "section_2_lot": {
+    "section": 2,
+    "lot_calc_file": "risk\\risk_manager.py",
+    "last5_lot_repro": [
+      {
+        "ticket": 56427299096,
+        "symbol": "XAUUSD",
+        "open_time": "2026-04-28 17:05:09.536959",
+        "actual_volume": 1.0,
+        "open_price": 4567.16,
+        "stop_loss": 4609.44728,
+        "atr_at_entry": 21.17819,
+        "sl_distance_pips_approx": 4228.73
+      },
+      {
+        "ticket": 56425848782,
+        "symbol": "AUDUSD",
+        "open_time": "2026-04-28 16:05:16.459782",
+        "actual_volume": 1.0,
+        "open_price": 0.71648,
+        "stop_loss": 0.71324,
+        "atr_at_entry": 0.00102,
+        "sl_distance_pips_approx": 32.4
+      },
+      {
+        "ticket": 56424325996,
+        "symbol": "EURUSD",
+        "open_time": "2026-04-28 15:05:06.765423",
+        "actual_volume": 1.0,
+        "open_price": 1.16792,
+        "stop_loss": 1.16467,
+        "atr_at_entry": 0.00107,
+        "sl_distance_pips_approx": 32.5
+      },
+      {
+        "ticket": 56422535859,
+        "symbol": "USDCHF",
+        "open_time": "2026-04-28 14:05:35.164291",
+        "actual_volume": 1.0,
+        "open_price": 0.78961,
+        "stop_loss": 0.79232,
+        "atr_at_entry": 0.00096,
+        "sl_distance_pips_approx": 27.1
+      },
+      {
+        "ticket": 56422535120,
+        "symbol": "USDCAD",
+        "open_time": "2026-04-28 14:05:32.898480",
+        "actual_volume": 1.0,
+        "open_price": 1.36615,
+        "stop_loss": 1.36829,
+        "atr_at_entry": 0.00102,
+        "sl_distance_pips_approx": 21.4
+      }
+    ],
+    "risk_config": {
+      "max_risk_per_trade": 0.01,
+      "max_daily_drawdown": 1.0,
+      "max_daily_loss": 1.0,
+      "max_open_positions": 10,
+      "max_correlated_positions": 3,
+      "max_total_risk": 0.03,
+      "min_sl_atr_multiplier": 1.5
+    }
+  },
+  "section_3_exec": {
+    "section": 3,
+    "has_slippage_column": true,
+    "slippage_per_symbol": [],
+    "slippage_nonzero_count": 0,
+    "slippage_total_v3": 137,
+    "retcode_log_mentions": {
+      "10018": {
+        "name": "TRADE_RETCODE_MARKET_CLOSED",
+        "count": 430
+      },
+      "10027": {
+        "name": "TRADE_RETCODE_LIMIT_VOLUME",
+        "count": 21
+      }
+    },
+    "sltp_server_side": true,
+    "has_modify_path": true
+  },
+  "section_4_spread": {
+    "section": 4,
+    "has_commission_column": true,
+    "commission_per_symbol": [
+      {
+        "symbol": "AUDUSD",
+        "n": 12,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "EURUSD",
+        "n": 7,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "GBPUSD",
+        "n": 11,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "USDCAD",
+        "n": 9,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "USDCHF",
+        "n": 11,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "USDJPY",
+        "n": 10,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      },
+      {
+        "symbol": "XAUUSD",
+        "n": 77,
+        "sum": 0.0,
+        "avg": 0.0,
+        "nonzero_count": 0
+      }
+    ],
+    "live_spread": {
+      "EURUSD": {
+        "spread_points": 6,
+        "bid": 1.1712,
+        "ask": 1.17126,
+        "tick_time": 1777418694
+      },
+      "GBPUSD": {
+        "spread_points": 9,
+        "bid": 1.35191,
+        "ask": 1.3519999999999999,
+        "tick_time": 1777418685
+      },
+      "USDJPY": {
+        "spread_points": 7,
+        "bid": 159.62,
+        "ask": 159.627,
+        "tick_time": 1777418690
+      },
+      "XAUUSD": {
+        "spread_points": 17,
+        "bid": 4595.67,
+        "ask": 4595.84,
+        "tick_time": 1777417199
+      },
+      "AUDUSD": {
+        "spread_points": 9,
+        "bid": 0.71814,
+        "ask": 0.71823,
+        "tick_time": 1777418640
+      },
+      "USDCAD": {
+        "spread_points": 9,
+        "bid": 1.36866,
+        "ask": 1.36875,
+        "tick_time": 1777418692
+      },
+      "USDCHF": {
+        "spread_points": 12,
+        "bid": 0.78914,
+        "ask": 0.78926,
+        "tick_time": 1777418691
+      }
+    },
+    "spread_60s_window": {
+      "EURUSD": {
+        "samples": [
+          6,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "min": 3,
+        "max": 6,
+        "mean": 3.5
+      },
+      "GBPUSD": {
+        "samples": [
+          9,
+          9,
+          9,
+          9,
+          9,
+          9
+        ],
+        "min": 9,
+        "max": 9,
+        "mean": 9.0
+      },
+      "USDJPY": {
+        "samples": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7
+        ],
+        "min": 7,
+        "max": 7,
+        "mean": 7.0
+      },
+      "XAUUSD": {
+        "samples": [
+          17,
+          17,
+          17,
+          17,
+          17,
+          17
+        ],
+        "min": 17,
+        "max": 17,
+        "mean": 17.0
+      },
+      "AUDUSD": {
+        "samples": [
+          9,
+          9,
+          9,
+          9,
+          10,
+          10
+        ],
+        "min": 9,
+        "max": 10,
+        "mean": 9.333333333333334
+      },
+      "USDCAD": {
+        "samples": [
+          9,
+          9,
+          9,
+          9,
+          9,
+          9
+        ],
+        "min": 9,
+        "max": 9,
+        "mean": 9.0
+      },
+      "USDCHF": {
+        "samples": [
+          12,
+          12,
+          12,
+          12,
+          12,
+          12
+        ],
+        "min": 12,
+        "max": 12,
+        "mean": 12.0
+      }
+    }
+  },
+  "section_5_swap": {
+    "section": 5,
+    "has_swap_column": true,
+    "swap_v3": {
+      "n": 137,
+      "sum": 0.0,
+      "avg": 0.0,
+      "nonzero_count": 0
+    },
+    "trades_held_over_24h": 7
+  },
+  "section_6_news": {
+    "section": 6,
+    "signal_status_alltime": {
+      "EXECUTED": 317,
+      "NEWS_FILTERED": 22,
+      "RISK_REJECTED": 372
+    },
+    "signal_status_v3": {
+      "EXECUTED": 139,
+      "RISK_REJECTED": 62
+    },
+    "news_filter_wired": true,
+    "news_events_total": 518,
+    "news_events_high_v3": 31
+  },
+  "section_7_struct": {
+    "section": 7,
+    "hardcoded_assumptions": [
+      {
+        "file": "scripts/paper_trade.py",
+        "line": 92,
+        "label": "pip_value hardcoded",
+        "text": "pip_value = 0.01 if (\"JPY\" in symbol or \"XAU\" in symbol) else 0.0001"
+      }
+    ]
+  }
+}
