@@ -1459,20 +1459,65 @@ with tab_improvements:
         c3.metric("🔶 IN_PROGRESS", int((actions["status"] == "IN_PROGRESS").sum()))
         c4.metric("✅ DONE", int((actions["status"] == "DONE").sum()))
 
-        # Phase 8 blocker subset
+        # Phase 8 + Phase 9 blocker countdowns — side by side
+        from datetime import date
+        cb1, cb2 = st.columns(2)
+
+        # Phase 8 (June 1 gate)
         p8 = actions[actions["blocking_phase"] == 8]
-        if not p8.empty:
-            n_p8_open = int((p8["status"] != "DONE").sum())
-            from datetime import date
-            days = (date(2026, 6, 1) - date.today()).days
-            color_p8 = "#EF5350" if n_p8_open > 0 else "#4CAF50"
-            st.markdown(
-                f"<div style='background:#12151C;border-left:3px solid {color_p8};border-radius:6px;"
-                f"padding:8px 14px;margin:8px 0;font-size:13px;color:#CCC'>"
-                f"🚧 <b>Phase 8 blockers:</b> {n_p8_open} of {len(p8)} still open. "
-                f"<b style='color:{color_p8}'>{days} days</b> until June 1 gate review."
-                f"</div>",
-                unsafe_allow_html=True,
+        with cb1:
+            if not p8.empty:
+                n_p8_open = int((p8["status"] != "DONE").sum())
+                days_p8 = (date(2026, 6, 1) - date.today()).days
+                color_p8 = "#EF5350" if n_p8_open > 0 else "#4CAF50"
+                st.markdown(
+                    f"<div style='background:#12151C;border-left:3px solid {color_p8};border-radius:6px;"
+                    f"padding:8px 14px;font-size:13px;color:#CCC'>"
+                    f"🚧 <b>Phase 8 blockers:</b> {n_p8_open} of {len(p8)} open. "
+                    f"<b style='color:{color_p8}'>{days_p8} days</b> until June 1 gate."
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    "<div style='background:#12151C;border-left:3px solid #4CAF50;border-radius:6px;"
+                    "padding:8px 14px;font-size:13px;color:#CCC'>"
+                    "✅ <b>Phase 8:</b> no blockers logged."
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # Phase 9 (Sep 1 live trading) — sourced primarily from live fidelity audit (GAP-FID-*)
+        p9 = actions[actions["blocking_phase"] == 9]
+        with cb2:
+            if not p9.empty:
+                n_p9_open = int((p9["status"] != "DONE").sum())
+                days_p9 = (date(2026, 9, 1) - date.today()).days
+                color_p9 = "#EF5350" if n_p9_open > 0 else ("#FFCA28" if days_p9 < 60 else "#888")
+                st.markdown(
+                    f"<div style='background:#12151C;border-left:3px solid {color_p9};border-radius:6px;"
+                    f"padding:8px 14px;font-size:13px;color:#CCC'>"
+                    f"🛬 <b>Phase 9 blockers:</b> {n_p9_open} of {len(p9)} open. "
+                    f"<b style='color:{color_p9}'>{days_p9} days</b> until Sep 1 live target."
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    "<div style='background:#12151C;border-left:3px solid #888;border-radius:6px;"
+                    "padding:8px 14px;font-size:13px;color:#CCC'>"
+                    "🛬 <b>Phase 9:</b> no blockers logged yet."
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # Audit reference — surface the latest fidelity audit if it exists
+        audit_path = Path("docs/research/live_fidelity_audit_2026_04_28.md")
+        if audit_path.exists():
+            audit_size = audit_path.stat().st_size / 1024
+            st.caption(
+                f"📋 Live-fidelity audit (2026-04-28, {audit_size:.0f} KB) at `docs/research/live_fidelity_audit_2026_04_28.md` — "
+                f"feeds the GAP-FID-* rows below. Re-run via `python scripts/live_fidelity_audit.py`."
             )
 
         cat_options = sorted(actions["category"].unique())
