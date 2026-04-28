@@ -48,6 +48,32 @@ risk:
   max_total_risk: 0.03         # 3% portfolio risk
   min_sl_atr_multiplier: 1.5
 
+# ============================================================
+# Strategy Blacklist (Installed 2026-04-28 per Meeting Vote 6, Option D)
+# ============================================================
+# Decision: block ml_direct on XAUUSD in BOTH configs until zero-BUY is
+# resolved (AI-001). The +$21k v3 ml_direct/XAUUSD profit was made during
+# a confirmed gold downtrend; the strategy has zero BUY capability across
+# 105 trades in 3 versions. Continuing to run it into a projected reversal
+# regime (Q3 2026 institutional consensus: bullish $5k-$6k) would convert
+# accumulated profit into mirror-image loss with no defensive capability.
+#
+# Lift conditions (ALL required):
+#   1. AI-001 (zero-BUY fix) shipped + validated on holdout
+#   2. June 1 Phase 8 gate review GREEN
+#   3. RFC documenting forward-looking justification (not P&L-justified)
+#
+# Per Vote 6 Option D: this entry mirrors base.yaml::strategy_blacklist.
+# ============================================================
+strategy_blacklist:
+  - strategy: "ml_direct"
+    symbol: "XAUUSD"
+    reason: "Zero-BUY structural defect; meeting vote 6D 2026-04-28; lift requires AI-001 + June 1 gate"
+
+  - strategy: "ml_filtered_sma"
+    symbol: "XAUUSD"
+    reason: "Mirrored from base.yaml; strategy retired entirely 2026-04-28 (vote 5)"
+
 # --- فلتر الجلسات ---
 session_filter:
   blocked_hours_utc: [8, 15, 23]

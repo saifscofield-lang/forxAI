@@ -187,7 +187,12 @@
       "Bash(D:/forexAI/venv/Scripts/pip install *)",
       "Bash(venv/Scripts/python.exe *)",
       "Bash(D:/forexAI/venv/Scripts/python.exe *)",
-      "Bash(PYTHONIOENCODING=utf-8 D:/forexAI/venv/Scripts/python.exe *)"
+      "Bash(PYTHONIOENCODING=utf-8 D:/forexAI/venv/Scripts/python.exe *)",
+      "Bash(awk '{print $1, $2, $4}')",
+      "Bash(awk '{print substr\\($2,1,2\\)}')",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\")",
+      "Bash(wmic process *)",
+      "Bash(cmd //c \"start.bat\")"
     ]
   }
 }

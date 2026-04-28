@@ -84,6 +84,7 @@ class Trade(Base):
     comment       = Column(String(100), nullable=True)
     engine_version = Column(String(10), nullable=True)   # e.g. "2.0" — for filtering ML training data
     strategy_version = Column(String(10), nullable=True)  # e.g. "2.0" — strategy version at trade time
+    data_group    = Column(String(20), nullable=True)     # OLD / TRANSITION / STABLE (added by segment_data.py; model sync 2026-04-22)
 
 
 class SignalLog(Base):
@@ -158,6 +159,8 @@ class TradeResult(Base):
     news_impact     = Column(String(10), nullable=True)         # LOW / MEDIUM / HIGH
     engine_version  = Column(String(10), nullable=True)         # e.g. "2.0" — for filtering ML training data
     strategy_version = Column(String(10), nullable=True)        # Strategy version at trade time
+    data_group      = Column(String(20), nullable=True)         # OLD / TRANSITION / STABLE (model sync 2026-04-22)
+    detected_regime = Column(String(30), nullable=True)         # Regime at trade entry (model sync 2026-04-22)
 
 
 class AccountSnapshot(Base):
@@ -534,6 +537,12 @@ class ShadowSignal(Base):
     # ML training label (computed after resolution)
     label             = Column(Integer, nullable=True)              # 1=profitable, 0=loss, NULL=unresolved
     filter_correct    = Column(Boolean, nullable=True)              # Was the filter decision correct?
+
+    # Data segmentation tag (added to the SQLite table on 2026-04-14 via segment_data.py
+    # ALTER TABLE; model declaration added 2026-04-22 to close the schema-drift bug that
+    # silently broke shadow writes for 6 days starting 2026-04-16 18:52 UTC.
+    # Values: OLD / TRANSITION / STABLE. Matches data_segmentation_log groups.
+    data_group        = Column(String(20), nullable=True)
 
     __table_args__ = (
         Index("ix_shadow_symbol_time", "symbol", "time"),

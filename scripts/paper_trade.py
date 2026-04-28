@@ -126,12 +126,15 @@ def create_strategies(config):
             added.append("MACD")
 
         # Bollinger Bounce
-        if is_approved("bollinger_bounce"):
-            strategies.append(BollingerBounceStrategy(
-                symbol=symbol,
-                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-            ))
-            added.append("BB")
+        # RETIRED 2026-04-28 per Vote 4 (high-WR/low-R:R pathology, n=25, PF=0.26)
+        # See: docs/research/decision_log.md 2026-04-28 entry
+        # Re-enabling requires: fresh n>=25 OOS sample + R:R >= 1.0 design
+        # if is_approved("bollinger_bounce"):
+        #     strategies.append(BollingerBounceStrategy(
+        #         symbol=symbol,
+        #         atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        #     ))
+        #     added.append("BB")
 
         # Stop Hunt Reversal
         if is_approved("stop_hunt_reversal"):
@@ -161,20 +164,24 @@ def create_strategies(config):
             added.append("ML")
 
         # ML Filtered Strategy
-        if ML_FILTERED_AVAILABLE and is_approved("ml_filtered_sma"):
-            try:
-                import pickle
-                model_path = f"models/market_learner/{symbol}_model.pkl"
-                if os.path.exists(model_path):
-                    with open(model_path, "rb") as f:
-                        model = pickle.load(f)
-                    strategies.append(MLFilteredStrategy(
-                        symbol=symbol, model=model,
-                        atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-                    ))
-                    added.append("MLF")
-            except Exception:
-                pass
+        # RETIRED 2026-04-28 per Vote 5 (high-WR/low-R:R pathology, n=22, PF=0.23,
+        # R:R=0.11, same pattern as bollinger_bounce — see AI-017 audit pending)
+        # See: docs/research/decision_log.md 2026-04-28 entry
+        # Re-enabling requires: fresh n>=22 OOS sample + R:R >= 1.0 design
+        # if ML_FILTERED_AVAILABLE and is_approved("ml_filtered_sma"):
+        #     try:
+        #         import pickle
+        #         model_path = f"models/market_learner/{symbol}_model.pkl"
+        #         if os.path.exists(model_path):
+        #             with open(model_path, "rb") as f:
+        #                 model = pickle.load(f)
+        #             strategies.append(MLFilteredStrategy(
+        #                 symbol=symbol, model=model,
+        #                 atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        #             ))
+        #             added.append("MLF")
+        #     except Exception:
+        #         pass
 
         source = "ALL (demo)" if all_mode else ("backtest" if approved else "default")
         logger.info(f"  {symbol}: {len(added)} strategies ({', '.join(added)}) [{source}]")

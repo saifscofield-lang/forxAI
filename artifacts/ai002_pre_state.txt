@@ -1,0 +1,17 @@
+==============================================================================
+AI-002 PRE-EXECUTION SNAPSHOT — 2026-04-28 20:55 UTC
+==============================================================================
+
+--- Last 5 closed trades (trade_results) ---
+  2026-04-28 18:32:14.000000 | USDCHF  SELL | stop_hunt_reversal   | pnl=+25.34 | SL_HIT   | v2.4
+  2026-04-28 17:48:00.000000 | XAUUSD  SELL | ml_direct            | pnl=+2.00 | SL_HIT   | v2.4
+  2026-04-28 17:47:19.000000 | USDCAD  SELL | bollinger_bounce     | pnl=-156.40 | SL_HIT   | v2.4
+  2026-04-28 16:30:07.000000 | AUDUSD  BUY  | bollinger_bounce     | pnl=+20.00 | SL_HIT   | v2.4
+  2026-04-28 15:55:07.000000 | EURUSD  BUY  | bollinger_bounce     | pnl=+149.00 | SL_HIT   | v2.4
+
+--- ml_direct/XAUUSD trades in v3 STABLE (will be blocked by AI-002c) ---
+  count: 75
+  last 3 opens:
+    2026-04-28 17:05:09.536959  profit=+2.00
+    2026-04-28 13:05:16.302885  profit=+2.00
+    2026-04-28 10:05:25.345452  profit=+928.00

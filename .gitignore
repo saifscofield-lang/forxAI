@@ -17,6 +17,12 @@ data/models/
 # نسخ احتياطية لقاعدة بيانات التتبع
 data/improvements.db.bak.*
 
+# نسخ احتياطية قبل التغييرات الحرجة (تحتوي على trading.db ~150MB)
+backups/
+
+# ملف مؤقت فارغ
+docs/dd.txt
+
 # ملفات Python
 *.egg-info/
 dist/

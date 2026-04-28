@@ -273,6 +273,64 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ── Meeting-outcomes banner (latest go/no-go from improvements.db) ────────────
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_latest_meeting_summary():
+    import sqlite3
+    try:
+        con = sqlite3.connect("data/improvements.db")
+        votes = con.execute(
+            "SELECT decision_date, verdict, COUNT(*) FROM go_no_go_decisions "
+            "WHERE decided_by LIKE 'meeting_%' "
+            "GROUP BY decision_date, verdict "
+            "ORDER BY decision_date DESC"
+        ).fetchall()
+        if not votes:
+            con.close()
+            return None
+        # Group by date
+        latest_date = votes[0][0]
+        same_date = [v for v in votes if v[0] == latest_date]
+        n_total = sum(v[2] for v in same_date)
+        n_red = sum(v[2] for v in same_date if v[1] == "RED")
+        n_yellow = sum(v[2] for v in same_date if v[1] == "YELLOW")
+        # Days to next gate (Phase 8 gate Jun 1)
+        from datetime import date
+        gate = date(2026, 6, 1)
+        days = (gate - date.today()).days
+        con.close()
+        return {"date": latest_date, "n_total": n_total, "n_red": n_red,
+                "n_yellow": n_yellow, "gate_days": days}
+    except Exception:
+        return None
+
+_meeting = _get_latest_meeting_summary()
+if _meeting:
+    border = "#EF5350" if _meeting["n_red"] > 0 else ("#FFCA28" if _meeting["n_yellow"] > 0 else "#4CAF50")
+    badge = "🔴" if _meeting["n_red"] > 0 else ("🟡" if _meeting["n_yellow"] > 0 else "🟢")
+    days_color = "#EF5350" if _meeting["gate_days"] <= 14 else ("#FFCA28" if _meeting["gate_days"] <= 30 else "#888")
+    st.markdown(
+        f"<div style='background:#12151C;border-left:4px solid {border};border-radius:8px;"
+        f"padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:18px'>"
+        f"<span style='font-size:18px'>📋</span>"
+        f"<span style='color:#CCC;font-size:13px'>"
+        f"<b style='color:#FFF'>Meeting {_meeting['date']}</b>: "
+        f"{_meeting['n_total']} votes decided  {badge}  "
+        f"<span style='color:#999'>(R={_meeting['n_red']} Y={_meeting['n_yellow']})</span>"
+        f"</span>"
+        f"<span style='color:{days_color};font-size:12px;margin-left:auto'>"
+        f"<b>{_meeting['gate_days']} days</b> to Phase 8 gate (Jun 1)"
+        f"</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    try:
+        st.page_link("pages/15_Meeting_Outcomes.py",
+                       label="View meeting outcomes, blockers, and risks",
+                       icon="📋")
+    except Exception:
+        st.caption("→ Meeting Outcomes page (sidebar nav)")
+
 # ── Overview KPIs ─────────────────────────────────────────────────────────────
 from dashboard.utils.db import get_performance_summary, get_signal_stats, get_latest_snapshot, get_open_trades
 

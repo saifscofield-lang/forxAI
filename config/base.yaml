@@ -53,14 +53,18 @@ data:
   history_bars: 1000         # عدد الشموع التاريخية
   update_interval_seconds: 5
 
-# --- حظر استراتيجية على زوج معين ---
+# Strategy blacklist — kept identical to paper.yaml after 2026-04-28 meeting (Vote 6 D).
+# Both configs MUST stay synchronized until config-parity CI guard (AI-004) lands.
+# Original v2 rationale ("Lost $30K+ shorting gold in uptrend"): superseded by
+# forward-looking rationale in paper.yaml.
 strategy_blacklist:
   - strategy: "ml_direct"
     symbol: "XAUUSD"
-    reason: "Lost $30K+ shorting gold in uptrend — model biased SELL"
+    reason: "Zero-BUY structural defect; meeting vote 6D 2026-04-28; lift requires AI-001 + June 1 gate"
+
   - strategy: "ml_filtered_sma"
     symbol: "XAUUSD"
-    reason: "Same ML model bias as ml_direct on gold"
+    reason: "Mirrored from base.yaml; strategy retired entirely 2026-04-28 (vote 5)"
 
 # --- فلتر الجلسات (من تقرير 119 صفقة) ---
 session_filter:
