@@ -284,6 +284,7 @@ with tab_phases:
             STATUS_AR = {
                 "COMPLETED": "مكتمل", "IN_PROGRESS": "جاري", "NOT_STARTED": "لم يبدأ",
                 "PENDING_ACTIVATION": "بانتظار التفعيل",
+                "DEFERRED": "مؤجل",
             }
 
             # Cache decisions by phase_number for verdict badges
@@ -312,6 +313,10 @@ with tab_phases:
                     css_class = "phase-pending"
                     status_color = "#FFCA28"
                     icon = "⏸"
+                elif status == "DEFERRED":
+                    css_class = "phase-pending"
+                    status_color = "#EF5350"
+                    icon = "🔒"
                 else:
                     css_class = "phase-pending"
                     status_color = "#555"
@@ -1281,6 +1286,89 @@ with tab_decisions:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Formal go/no-go decisions (from go_no_go_decisions table) ──────
+    st.markdown("### 🎯 Go / No-Go Decisions (formal verdicts)")
+    try:
+        conn = get_conn(IMP_DB)
+        gn = pd.read_sql(
+            "SELECT phase_number, decision_date, verdict, gates_passed, gates_total, "
+            "rationale_en, rationale_ar, decided_by, next_action "
+            "FROM go_no_go_decisions ORDER BY decision_date DESC, id DESC",
+            conn
+        )
+        # External review inputs (a.k.a. decision_inputs — review-grade material that fed decisions)
+        try:
+            inputs = pd.read_sql(
+                "SELECT input_date, phase_number, subject, summary, artifacts, source "
+                "FROM decision_inputs ORDER BY input_date DESC, id DESC",
+                conn
+            )
+        except Exception:
+            inputs = pd.DataFrame()
+        conn.close()
+    except Exception as e:
+        st.error(f"خطأ في تحميل go_no_go_decisions: {e}")
+        gn = pd.DataFrame()
+        inputs = pd.DataFrame()
+
+    if not gn.empty:
+        # Verdict counts
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("الإجمالي", len(gn))
+        c2.metric("🟢 GREEN", int((gn["verdict"] == "GREEN").sum()))
+        c3.metric("🟡 YELLOW", int((gn["verdict"] == "YELLOW").sum()))
+        c4.metric("🔴 RED", int((gn["verdict"] == "RED").sum()))
+
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+
+        for _, d in gn.iterrows():
+            v = d["verdict"]
+            color = {"GREEN": "#4CAF50", "YELLOW": "#FFCA28", "RED": "#EF5350"}.get(v, "#666")
+            bg = {"GREEN": "#0D2818", "YELLOW": "#2B2410", "RED": "#2D1111"}.get(v, "#222")
+            emoji = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}.get(v, "⚪")
+            pn = int(d["phase_number"])
+            pn_display = "10.5" if pn == 105 else str(pn)
+            gates = f" — gates {int(d['gates_passed'])}/{int(d['gates_total'])}" if pd.notna(d["gates_passed"]) and pd.notna(d["gates_total"]) else ""
+            rationale = d["rationale_en"] or ""
+            if rationale.startswith("[") and "] " in rationale:
+                rationale = rationale.split("] ", 1)[1]
+
+            st.markdown(
+                f"<div class='decision-card' style='border-right:4px solid {color}'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>"
+                f"<span class='badge' style='background:{bg};color:{color};border:1px solid {color}'>{emoji} {v}{gates}</span>"
+                f"<span style='color:#555;font-size:11px'>المرحلة {pn_display} &nbsp;|&nbsp; {d['decision_date']}</span>"
+                f"</div>"
+                f"<div style='color:#EEE;font-size:13px;line-height:1.6;margin-bottom:6px'>{rationale}</div>"
+                f"<div style='color:#999;font-size:12px;line-height:1.6'>"
+                f"<b style='color:#FF9800'>التالي:</b> {d['next_action'] or '—'}"
+                f"</div>"
+                f"<div style='color:#666;font-size:11px;margin-top:4px'>قرّر بواسطة: {d['decided_by'] or '—'}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("لا توجد قرارات go/no-go رسمية بعد")
+
+    # External review inputs — what fed the formal decisions
+    if not inputs.empty:
+        st.markdown("### 📥 Decision Inputs (external reviews, audits)")
+        for _, r in inputs.iterrows():
+            st.markdown(
+                f"<div class='decision-card' style='border-right:3px solid #1E88E5'>"
+                f"<div style='display:flex;justify-content:space-between;margin-bottom:6px'>"
+                f"<span style='color:#1E88E5;font-weight:700;font-size:13px'>📥 {r['subject']}</span>"
+                f"<span style='color:#555;font-size:11px'>المرحلة {r['phase_number'] or '—'} &nbsp;|&nbsp; {r['input_date']}</span>"
+                f"</div>"
+                f"<div style='color:#CCC;font-size:12px;line-height:1.6;margin-bottom:6px'>{r['summary'] or ''}</div>"
+                f"<div style='color:#666;font-size:11px'>المصدر: {r['source'] or '—'} &nbsp;|&nbsp; <code>{r['artifacts'] or ''}</code></div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+    st.markdown("### 📜 سجل القرارات اليومي (decisions_log)")
+
     try:
         conn = get_conn(IMP_DB)
         decisions = pd.read_sql(
@@ -1330,10 +1418,126 @@ with tab_decisions:
 with tab_improvements:
     st.markdown("""
     <div style="color:#888;font-size:13px;margin-bottom:16px">
-        سجل جميع التحسينات من IMP-01 إلى IMP-76 — كل تحسين يُتتبع من الفكرة إلى التنفيذ.
-        هذا يمنع فقدان الأفكار ويضمن تنفيذ الأولويات أولاً.
+        سجل التحسينات (IMP) + بنود الإجراءات (AI) + سجل المخاطر (R-EXT). كل تتبع يضمن عدم فقدان الأفكار.
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Action Items (post-meeting work) ─────────────────────────────
+    st.markdown("### ✅ Action Items (post-meeting deliverables)")
+    try:
+        conn = get_conn(IMP_DB)
+        try:
+            actions = pd.read_sql(
+                "SELECT action_id, category, title, blocking_phase, status, "
+                "created_date, completed_date, source FROM action_items "
+                "ORDER BY CASE status WHEN 'OPEN' THEN 1 WHEN 'IN_PROGRESS' THEN 2 "
+                "WHEN 'DONE' THEN 3 ELSE 4 END, action_id",
+                conn
+            )
+        except Exception:
+            actions = pd.DataFrame()
+        try:
+            risks = pd.read_sql(
+                "SELECT risk_id, title, severity, likelihood, status, "
+                "mitigation, identified_date, source FROM risks_register "
+                "ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 "
+                "WHEN 'MEDIUM' THEN 3 ELSE 4 END",
+                conn
+            )
+        except Exception:
+            risks = pd.DataFrame()
+        conn.close()
+    except Exception as e:
+        st.error(f"خطأ في تحميل action_items / risks_register: {e}")
+        actions = pd.DataFrame()
+        risks = pd.DataFrame()
+
+    if not actions.empty:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("الإجمالي", len(actions))
+        c2.metric("⏳ OPEN", int((actions["status"] == "OPEN").sum()))
+        c3.metric("🔶 IN_PROGRESS", int((actions["status"] == "IN_PROGRESS").sum()))
+        c4.metric("✅ DONE", int((actions["status"] == "DONE").sum()))
+
+        # Phase 8 blocker subset
+        p8 = actions[actions["blocking_phase"] == 8]
+        if not p8.empty:
+            n_p8_open = int((p8["status"] != "DONE").sum())
+            from datetime import date
+            days = (date(2026, 6, 1) - date.today()).days
+            color_p8 = "#EF5350" if n_p8_open > 0 else "#4CAF50"
+            st.markdown(
+                f"<div style='background:#12151C;border-left:3px solid {color_p8};border-radius:6px;"
+                f"padding:8px 14px;margin:8px 0;font-size:13px;color:#CCC'>"
+                f"🚧 <b>Phase 8 blockers:</b> {n_p8_open} of {len(p8)} still open. "
+                f"<b style='color:{color_p8}'>{days} days</b> until June 1 gate review."
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        cat_filter = st.multiselect(
+            "Filter by category",
+            options=sorted(actions["category"].unique()),
+            default=[],
+            key="ai_cat_filter",
+        )
+        status_filter = st.multiselect(
+            "Filter by status",
+            options=sorted(actions["status"].unique()),
+            default=["OPEN", "IN_PROGRESS"],
+            key="ai_status_filter",
+        )
+        filt = actions
+        if cat_filter:
+            filt = filt[filt["category"].isin(cat_filter)]
+        if status_filter:
+            filt = filt[filt["status"].isin(status_filter)]
+
+        # Visual sev/status indicator column
+        def _ai_emoji(row):
+            if row["status"] == "DONE": return "✅"
+            if row["status"] == "IN_PROGRESS": return "🔶"
+            if row["status"] == "CANCELLED": return "🚫"
+            return "⏳"
+        filt = filt.copy()
+        filt.insert(0, "", filt.apply(_ai_emoji, axis=1))
+        st.dataframe(
+            filt[["", "action_id", "category", "title", "blocking_phase", "status",
+                  "created_date", "completed_date", "source"]],
+            width="stretch", hide_index=True,
+        )
+    else:
+        st.info("لا توجد action items مسجلة")
+
+    # ── Risks Register ───────────────────────────────────────────────
+    st.markdown("### ⚠ Risks Register")
+    if not risks.empty:
+        sev_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
+        sev_color = {"CRITICAL": "#EF5350", "HIGH": "#FF9800", "MEDIUM": "#FFCA28", "LOW": "#4CAF50"}
+        for _, r in risks.iterrows():
+            color = sev_color.get(r["severity"], "#888")
+            emoji = sev_emoji.get(r["severity"], "⚪")
+            st.markdown(
+                f"<div style='background:#12151C;border-left:3px solid {color};border-radius:6px;"
+                f"padding:10px 14px;margin-bottom:8px'>"
+                f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+                f"<span style='font-weight:700;color:#FFF;font-size:13px'>{emoji} {r['risk_id']} — {r['title']}</span>"
+                f"<span style='color:{color};font-size:12px;font-weight:600'>"
+                f"{r['severity']} / likelihood {r['likelihood']} &nbsp;[{r['status']}]"
+                f"</span>"
+                f"</div>"
+                f"<div style='color:#999;font-size:12px;line-height:1.5'>"
+                f"<b style='color:#1E88E5'>Mitigation:</b> {r['mitigation'] or '—'}"
+                f"</div>"
+                f"<div style='color:#666;font-size:11px;margin-top:4px'>المصدر: {r['source']} &nbsp;|&nbsp; identified {r['identified_date']}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("لا توجد مخاطر مسجلة")
+
+    st.divider()
+    st.markdown("### 🔧 Improvements Catalog (IMP-01 → IMP-76)")
 
     try:
         conn = get_conn(IMP_DB)
