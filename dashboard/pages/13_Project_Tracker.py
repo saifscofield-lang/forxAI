@@ -1475,16 +1475,21 @@ with tab_improvements:
                 unsafe_allow_html=True,
             )
 
+        cat_options = sorted(actions["category"].unique())
         cat_filter = st.multiselect(
             "Filter by category",
-            options=sorted(actions["category"].unique()),
+            options=cat_options,
             default=[],
             key="ai_cat_filter",
         )
+        status_options = sorted(actions["status"].unique())
+        # Intersect requested defaults with what's actually in the data
+        # (Streamlit raises if any default value is not in options)
+        preferred_default = [s for s in ("OPEN", "IN_PROGRESS") if s in status_options]
         status_filter = st.multiselect(
             "Filter by status",
-            options=sorted(actions["status"].unique()),
-            default=["OPEN", "IN_PROGRESS"],
+            options=status_options,
+            default=preferred_default,
             key="ai_status_filter",
         )
         filt = actions
@@ -1569,10 +1574,11 @@ with tab_improvements:
             # Filter
             status_options = imps["status"].unique().tolist()
             STATUS_AR_MAP = {"DONE": "مكتمل", "SKIPPED": "تم تخطيه", "PENDING": "معلّق", "TODO": "للتنفيذ"}
+            imp_default = [s for s in ("DONE",) if s in status_options]
             status_filter = st.multiselect(
                 "تصفية حسب الحالة",
                 status_options,
-                default=["DONE"],
+                default=imp_default,
                 format_func=lambda x: STATUS_AR_MAP.get(x, x),
             )
             filtered = imps[imps["status"].isin(status_filter)] if status_filter else imps
