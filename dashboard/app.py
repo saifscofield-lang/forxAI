@@ -191,6 +191,72 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Engine pause/active state — inferred from paper_trading.log tail ──
+    # The /pause command sets an in-memory flag in the engine process; we
+    # cannot read it from the dashboard. Inferring from the most recent
+    # scan-related log line is the next-best signal.
+    @st.cache_data(ttl=30, show_spinner=False)
+    def _get_engine_state():
+        from datetime import datetime as _dt, timedelta as _td
+        try:
+            log_path = "data/logs/paper_trading.log"
+            with open(log_path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 16384))
+                tail = f.read().decode("utf-8", errors="ignore")
+        except Exception:
+            return None
+        lines = tail.splitlines()[-200:]
+        most_recent_marker = None
+        most_recent_ts = None
+        for line in reversed(lines):
+            if "Trading paused via /pause" in line:
+                most_recent_marker = "paused"
+            elif "complete" in line and "Scan #" in line:
+                most_recent_marker = "active"
+            elif "Scan #" in line and " at " in line:
+                most_recent_marker = "scanning"
+            else:
+                continue
+            try:
+                most_recent_ts = _dt.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+            break
+        # Staleness check
+        if most_recent_ts:
+            age_sec = (_dt.now() - most_recent_ts).total_seconds()
+        else:
+            age_sec = 999999
+        return {"marker": most_recent_marker, "age_sec": age_sec, "ts": most_recent_ts}
+
+    eng = _get_engine_state()
+    if eng and eng["marker"]:
+        marker = eng["marker"]
+        age_min = eng["age_sec"] / 60
+        # 90 min between scans is acceptable (hourly cadence + jitter); >180 = engine silent
+        if age_min > 180:
+            label, color = "صامت / silent", "#EF5350"
+        elif marker == "paused":
+            label, color = "موقوف / paused", "#FFCA28"
+        elif marker in ("active", "scanning"):
+            label, color = "نشط / active", "#4CAF50"
+        else:
+            label, color = "غير معروف", "#888"
+        st.markdown(
+            f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px'>"
+            f"<span style='color:#888'>المحرّك</span>"
+            f"<span style='color:{color};font-weight:600'>{label}</span>"
+            f"</div>"
+            f"<div style='color:#666;font-size:11px;text-align:right;margin-top:-4px'>"
+            f"آخر نشاط: {age_min:.0f} دقيقة"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if marker == "paused":
+            st.caption("لاستئناف: أرسل `/resume` في Telegram")
+
     st.divider()
 
     # ── News Alerts ───────────────────────────────────────────────────────
