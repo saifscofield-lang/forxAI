@@ -47,8 +47,17 @@ class TradingEngine:
 
     def __init__(self, config_path: str = "config/base.yaml"):
         config_path = resolve_config_path(config_path)
+        self._config_path = config_path
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
+
+        # AI-004: Config snapshot at startup (hash + key counts) — logged so
+        # the next debugging session can cross-check what the engine actually
+        # loaded vs. what the file currently contains. Same machinery used by
+        # the periodic drift check below.
+        self._config_snapshot = self._compute_config_snapshot()
+        self._log_config_snapshot()
+        self._scans_since_drift_check = 0
 
         self.adapter = MT5Adapter()
         self.risk_manager = RiskManager(config_path)
@@ -79,6 +88,86 @@ class TradingEngine:
                 self._optimized_params = yaml.safe_load(f) or {}
         except Exception:
             self._optimized_params = {}
+
+    # ─────────────────────────────────────────────────────────────────
+    # AI-004: Config snapshot + drift detection
+    # ─────────────────────────────────────────────────────────────────
+    def _compute_config_snapshot(self) -> dict:
+        """Hash the loaded config + summarize key counts. Used at startup
+        and periodically to detect on-disk-vs-in-memory config drift."""
+        import hashlib
+        from pathlib import Path
+        try:
+            on_disk_bytes = Path(self._config_path).read_bytes()
+            on_disk_hash = hashlib.sha256(on_disk_bytes).hexdigest()[:16]
+        except Exception as e:
+            on_disk_hash = f"<read-error: {e}>"
+        return {
+            "config_path": self._config_path,
+            "on_disk_hash": on_disk_hash,
+            "n_instruments": len(self.config.get("instruments", [])),
+            "n_blacklist_entries": len(self.config.get("strategy_blacklist", [])),
+            "blacklist_keys": [
+                f"{x.get('strategy')}:{x.get('symbol')}"
+                for x in self.config.get("strategy_blacklist", [])
+            ],
+            "blocked_hours_utc": self.config.get("session_filter", {}).get("blocked_hours_utc", []),
+            "max_open_positions": self.config.get("risk", {}).get("max_open_positions"),
+            "max_risk_per_trade": self.config.get("risk", {}).get("max_risk_per_trade"),
+        }
+
+    def _log_config_snapshot(self) -> None:
+        """Log the loaded config fingerprint at startup."""
+        snap = self._config_snapshot
+        logger.info(
+            f"[CONFIG] loaded {snap['config_path']} "
+            f"(sha256: {snap['on_disk_hash']}) | "
+            f"instruments: {snap['n_instruments']} | "
+            f"blacklist: {snap['n_blacklist_entries']} entries "
+            f"({', '.join(snap['blacklist_keys']) or 'none'}) | "
+            f"blocked_hours: {snap['blocked_hours_utc']} | "
+            f"max_open: {snap['max_open_positions']} | "
+            f"risk_per_trade: {snap['max_risk_per_trade']}"
+        )
+
+    def _check_config_drift(self) -> None:
+        """Re-hash on-disk config and compare to startup snapshot.
+
+        Engine uses an in-memory copy loaded once at __init__. If someone
+        edits paper.yaml without restarting, the on-disk file diverges from
+        what the engine is actually using. This catches that within one
+        scan cycle and logs a clear warning.
+
+        Same root-cause class as the 6-day shadow incident: silent state
+        drift between code/config that the engine *thinks* it has and the
+        file on disk.
+        """
+        import hashlib
+        from pathlib import Path
+        try:
+            on_disk_bytes = Path(self._config_path).read_bytes()
+            on_disk_hash = hashlib.sha256(on_disk_bytes).hexdigest()[:16]
+        except Exception as e:
+            logger.warning(f"[CONFIG DRIFT CHECK] cannot read config file: {e}")
+            return
+        startup_hash = self._config_snapshot["on_disk_hash"]
+        if on_disk_hash != startup_hash:
+            logger.warning(
+                f"[CONFIG DRIFT] {self._config_path} changed since engine startup. "
+                f"on-disk hash: {on_disk_hash}, in-memory hash: {startup_hash}. "
+                f"Engine is still running with the OLD config; restart to apply changes."
+            )
+            try:
+                self.notifier.send(
+                    f"⚠️ <b>Config drift detected</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📁 <code>{self._config_path}</code>\n"
+                    f"🔑 disk: <code>{on_disk_hash}</code>\n"
+                    f"🔑 engine: <code>{startup_hash}</code>\n"
+                    f"⚡ restart engine to apply"
+                )
+            except Exception:
+                pass
 
     def set_news_filter(self, news_filter):
         """Set news filter for blocking trades during high-impact events."""
@@ -1137,6 +1226,12 @@ class TradingEngine:
 
         self.scan_count += 1
         scan_start = _time.time()
+
+        # AI-004: periodic config drift check (every 6 scans = ~6 hours)
+        self._scans_since_drift_check += 1
+        if self._scans_since_drift_check >= 6:
+            self._check_config_drift()
+            self._scans_since_drift_check = 0
 
         # Update P&L
         account = self.adapter.get_account_info()
