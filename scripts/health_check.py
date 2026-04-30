@@ -178,8 +178,6 @@ def main():
         sec_results.append(check("RSI Reversal", True, "OK"))
         from strategies.macd_crossover import MACDCrossoverStrategy
         sec_results.append(check("MACD Crossover", True, "OK"))
-        from strategies.bollinger_bounce import BollingerBounceStrategy
-        sec_results.append(check("Bollinger Bounce", True, "OK"))
         from strategies.sma_crossover import SMACrossoverStrategy
         sec_results.append(check("SMA Crossover", True, "OK (disabled)"))
     except ImportError as e:

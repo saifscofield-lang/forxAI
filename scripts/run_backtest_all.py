@@ -29,10 +29,7 @@ from backtest.universal_backtester import UniversalBacktester, BacktestResult
 from backtest.metrics import compute_metrics, format_report
 from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
-from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.sma_crossover import SMACrossoverStrategy
-from strategies.stop_hunt_reversal import StopHuntReversalStrategy
-from strategies.asia_breakout import AsiaBreakoutStrategy
 from observability.telegram_notifier import TelegramNotifier
 from engine.scoring import compute_score, format_score, grade_from_score
 
@@ -84,7 +81,7 @@ DEFAULT_PROFILE = "moderate"
 
 # ── All available strategy names ──
 ALL_STRATEGY_NAMES = [
-    "sma_crossover", "rsi_reversal", "macd_crossover", "bollinger_bounce",
+    "sma_crossover", "rsi_reversal", "macd_crossover",
     "ml_direct", "ml_filtered_sma",
 ]
 
@@ -196,9 +193,6 @@ def preflight_check(config_path: str = "config/base.yaml") -> bool:
         "sma_crossover": ("SMACrossoverStrategy", True),
         "rsi_reversal": ("RSIReversalStrategy", True),
         "macd_crossover": ("MACDCrossoverStrategy", True),
-        "bollinger_bounce": ("BollingerBounceStrategy", True),
-        "stop_hunt_reversal": ("StopHuntReversalStrategy", True),
-        "asia_breakout": ("AsiaBreakoutStrategy", True),
         "ml_direct": ("MLDirectStrategy", ML_DIRECT_AVAILABLE),
         "ml_filtered_sma": ("MLFilteredStrategy", ML_FILTERED_AVAILABLE),
     }
@@ -587,20 +581,6 @@ def create_all_strategies(symbol: str, config: dict):
             symbol=symbol,
             atr_sl_multiplier=sl_mult * 1.25,
             atr_tp_multiplier=tp_mult * 1.15,
-        ),
-        BollingerBounceStrategy(
-            symbol=symbol,
-            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-        ),
-        StopHuntReversalStrategy(
-            symbol=symbol,
-            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-            pip_value=0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001,
-        ),
-        AsiaBreakoutStrategy(
-            symbol=symbol,
-            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-            pip_value=0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001,
         ),
     ]
 

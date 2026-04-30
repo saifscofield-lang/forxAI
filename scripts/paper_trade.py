@@ -28,10 +28,7 @@ from engine.trading_engine import TradingEngine
 from strategies.sma_crossover import SMACrossoverStrategy
 from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
-from strategies.bollinger_bounce import BollingerBounceStrategy
 from strategies.ml_direct_strategy import MLDirectStrategy
-from strategies.stop_hunt_reversal import StopHuntReversalStrategy
-from strategies.asia_breakout import AsiaBreakoutStrategy
 
 try:
     from strategies.ml_filtered_strategy import MLFilteredStrategy
@@ -125,34 +122,10 @@ def create_strategies(config):
             ))
             added.append("MACD")
 
-        # Bollinger Bounce
-        # RETIRED 2026-04-28 per Vote 4 (high-WR/low-R:R pathology, n=25, PF=0.26)
-        # See: docs/research/decision_log.md 2026-04-28 entry
-        # Re-enabling requires: fresh n>=25 OOS sample + R:R >= 1.0 design
-        # if is_approved("bollinger_bounce"):
-        #     strategies.append(BollingerBounceStrategy(
-        #         symbol=symbol,
-        #         atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-        #     ))
-        #     added.append("BB")
-
-        # Stop Hunt Reversal
-        if is_approved("stop_hunt_reversal"):
-            strategies.append(StopHuntReversalStrategy(
-                symbol=symbol,
-                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-                pip_value=pip_value,
-            ))
-            added.append("SH")
-
-        # Asia Breakout
-        if is_approved("asia_breakout"):
-            strategies.append(AsiaBreakoutStrategy(
-                symbol=symbol,
-                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-                pip_value=pip_value,
-            ))
-            added.append("AB")
+        # bollinger_bounce, stop_hunt_reversal, asia_breakout — archived to
+        # strategies/archive/ (Phase 7 Step 3, 2026-04-30). bollinger_bounce
+        # was retired 2026-04-28 per Vote 4 (R:R pathology); the other two
+        # were never approved in any backtest profile. See decision_log.md.
 
         # ML Direct Strategy
         ml_strat = MLDirectStrategy(
