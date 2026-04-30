@@ -503,6 +503,103 @@ if not recent_signals.empty:
 else:
     st.info("لا توجد إشارات بعد.")
 
+# ── Next Actions (live from improvements.db / Project Tracker) ───────────────
+st.divider()
+st.subheader("أهم المهام المعلّقة — Next Actions")
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_top_pending_tasks():
+    """Pull the most-pressing pending work from the project tracker DB.
+
+    Returns (blocking_actions, active_phase_steps).
+    BLOCKING action_items rank above MONITORING/SHADOW/DOCS; phase steps come
+    only from phases currently IN_PROGRESS or PENDING_ACTIVATION."""
+    import sqlite3
+    blocking, steps = [], []
+    try:
+        con = sqlite3.connect("data/improvements.db")
+        cat_rank = "CASE category WHEN 'BLOCKING' THEN 0 WHEN 'MONITORING' THEN 1 "\
+                   "WHEN 'SHADOW' THEN 2 WHEN 'DOCS' THEN 3 ELSE 4 END"
+        rows = con.execute(
+            f"SELECT action_id, category, title, blocking_phase, due_date "
+            f"FROM action_items WHERE status='OPEN' "
+            f"ORDER BY {cat_rank}, blocking_phase NULLS LAST, created_date DESC LIMIT 6"
+        ).fetchall()
+        blocking = [
+            {"id": r[0], "category": r[1], "title": r[2],
+             "phase": r[3], "due": r[4]} for r in rows
+        ]
+        rows = con.execute(
+            "SELECT ps.phase_number, pp.name, ps.step_order, ps.description "
+            "FROM phase_steps ps JOIN project_phases pp "
+            "  ON pp.phase_number = ps.phase_number "
+            "WHERE pp.status IN ('IN_PROGRESS','PENDING_ACTIVATION') "
+            "  AND ps.status IN ('PENDING','IN_PROGRESS') "
+            "ORDER BY ps.phase_number, ps.step_order LIMIT 6"
+        ).fetchall()
+        steps = [
+            {"phase": r[0], "phase_name": r[1], "order": r[2], "desc": r[3]}
+            for r in rows
+        ]
+        con.close()
+    except Exception:
+        pass
+    return blocking, steps
+
+_blocking, _steps = _get_top_pending_tasks()
+
+_cat_color = {"BLOCKING": "#EF5350", "MONITORING": "#FFCA28",
+              "SHADOW": "#42A5F5", "DOCS": "#888"}
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    st.markdown("**🚧 إجراءات عاجلة (Action Items)**")
+    if _blocking:
+        for it in _blocking:
+            color = _cat_color.get(it["category"], "#888")
+            phase_chip = (f"<span style='background:#1A1F2E;color:#AAA;border:1px solid #2D3748;"
+                          f"border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px'>"
+                          f"Phase {it['phase']}</span>") if it["phase"] else ""
+            due_chip = (f"<span style='color:#888;font-size:11px;margin-left:6px'>"
+                        f"due {it['due']}</span>") if it["due"] else ""
+            st.markdown(
+                f"<div style='background:#12151C;border-left:3px solid {color};"
+                f"border-radius:6px;padding:8px 12px;margin-bottom:6px'>"
+                f"<div style='font-size:11px;color:{color};font-weight:700'>"
+                f"{it['category']} · {it['id']}{phase_chip}{due_chip}</div>"
+                f"<div style='color:#DDD;font-size:13px;margin-top:2px'>{it['title']}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("لا توجد إجراءات معلّقة.")
+
+with col_b:
+    st.markdown("**▶ خطوات المراحل النشطة (Active Phases)**")
+    if _steps:
+        for s in _steps:
+            desc = s["desc"][:120] + ("…" if len(s["desc"]) > 120 else "")
+            st.markdown(
+                f"<div style='background:#12151C;border-left:3px solid #42A5F5;"
+                f"border-radius:6px;padding:8px 12px;margin-bottom:6px'>"
+                f"<div style='font-size:11px;color:#42A5F5;font-weight:700'>"
+                f"Phase {s['phase']} · Step {s['order']} "
+                f"<span style='color:#888;font-weight:400'>· {s['phase_name']}</span></div>"
+                f"<div style='color:#DDD;font-size:13px;margin-top:2px'>{desc}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("لا توجد خطوات معلّقة في المراحل النشطة.")
+
+try:
+    st.page_link("pages/13_Project_Tracker.py",
+                 label="فتح Project Tracker الكامل",
+                 icon="📋")
+except Exception:
+    st.caption("→ Project Tracker (sidebar nav)")
+
 # ── Quick Navigation ──────────────────────────────────────────────────────────
 st.divider()
 st.subheader("التنقل السريع")
