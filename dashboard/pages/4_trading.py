@@ -250,9 +250,15 @@ with inner[2]:
                 # Try to fetch nearby OHLCV bars for the chart
                 try:
                     con = sqlite3.connect("data/trading.db")
-                    sym = trade_row["symbol"]
-                    open_t = trade_row["open_time"]
-                    close_t = trade_row["close_time"]
+                    sym = str(trade_row["symbol"])
+                    # Coerce open_time / close_time to strings — pandas
+                    # Timestamp objects don't bind directly to sqlite3
+                    # parameters and SQLite's datetime() function expects a
+                    # text input anyway. Drop microseconds for cleanliness.
+                    open_ts = pd.to_datetime(trade_row["open_time"])
+                    close_ts = pd.to_datetime(trade_row["close_time"])
+                    open_t = open_ts.strftime("%Y-%m-%d %H:%M:%S")
+                    close_t = close_ts.strftime("%Y-%m-%d %H:%M:%S")
                     bars = pd.read_sql(
                         "SELECT time, open, high, low, close FROM ohlcv_bars "
                         "WHERE symbol=? AND timeframe='H1' "
@@ -274,7 +280,25 @@ with inner[2]:
                             f"ربح ${trade_row['profit']:.2f}"
                         )
                     else:
-                        st.warning("لا توجد بيانات OHLCV للنافذة المحيطة بالصفقة.")
+                        # Diagnose: is it a coverage problem (bars table stale) or
+                        # a per-symbol gap?
+                        con2 = sqlite3.connect("data/trading.db")
+                        last_bar = con2.execute(
+                            "SELECT MAX(time) FROM ohlcv_bars WHERE symbol=? AND timeframe='H1'",
+                            (sym,),
+                        ).fetchone()[0]
+                        con2.close()
+                        if last_bar and pd.to_datetime(last_bar) < open_ts:
+                            st.warning(
+                                f"بيانات OHLCV لـ {sym} متوقفة عند {last_bar} — "
+                                f"الصفقة فُتحت {open_t}، خارج نطاق البيانات المحفوظة. "
+                                "شغّل `python scripts/download_historical_data.py` لتحديث جدول ohlcv_bars."
+                            )
+                        else:
+                            st.warning(
+                                f"لا توجد بيانات OHLCV للنافذة المحيطة بالصفقة "
+                                f"({open_t} → {close_t})."
+                            )
                 except Exception as e:
                     st.caption(f"تعذّر تحميل الرسم البياني: {e}")
 
