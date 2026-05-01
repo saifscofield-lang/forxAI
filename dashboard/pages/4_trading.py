@@ -94,6 +94,77 @@ st.caption(
 st.divider()
 
 
+# ── exit_reason_v2 distribution (AI-017b classifier) ─────────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _exit_reason_v2_dist():
+    """Distribution of post-classifier exit reasons + close_comment coverage."""
+    try:
+        con = sqlite3.connect("data/trading.db")
+        cols = [r[1] for r in con.execute(
+            "PRAGMA table_info(trade_results)"
+        ).fetchall()]
+        if "exit_reason_v2" not in cols:
+            con.close()
+            return None
+        dist_v2 = dict(con.execute(
+            "SELECT exit_reason_v2, COUNT(*) FROM trade_results "
+            "WHERE engine_version='2.4' AND exit_reason_v2 IS NOT NULL "
+            "GROUP BY exit_reason_v2"
+        ).fetchall())
+        dist_old = dict(con.execute(
+            "SELECT exit_reason, COUNT(*) FROM trade_results "
+            "WHERE engine_version='2.4' GROUP BY exit_reason"
+        ).fetchall())
+        cc_total = con.execute(
+            "SELECT COUNT(*) FROM trade_results WHERE engine_version='2.4'"
+        ).fetchone()[0]
+        cc_set = con.execute(
+            "SELECT COUNT(*) FROM trade_results "
+            "WHERE engine_version='2.4' AND close_comment IS NOT NULL"
+        ).fetchone()[0] if "close_comment" in cols else 0
+        con.close()
+        return {"v2": dist_v2, "old": dist_old,
+                "cc_total": cc_total, "cc_set": cc_set}
+    except Exception:
+        return None
+
+
+_dist = _exit_reason_v2_dist()
+if _dist:
+    st.markdown("### 🏷 توزيع أسباب الإغلاق (AI-017b classifier)")
+    cols_v2 = st.columns(5)
+    palette = {
+        "SL_HIT": "#EF5350", "TP_HIT": "#4CAF50",
+        "BE_HIT": "#FFCA28", "TRAILING_STOP": "#42A5F5",
+        "MANUAL": "#888",
+    }
+    for col, label in zip(cols_v2,
+                           ["SL_HIT", "TP_HIT", "BE_HIT", "TRAILING_STOP", "MANUAL"]):
+        n = _dist["v2"].get(label, 0)
+        old = _dist["old"].get(label, 0)
+        delta_str = ""
+        if label == "SL_HIT" and old > n:
+            delta_str = f"−{old - n} reclassified"
+        elif label in ("BE_HIT", "TRAILING_STOP") and n > 0:
+            delta_str = f"+{n} new (was 0)"
+        col.metric(label, n, delta=delta_str if delta_str else None,
+                   delta_color="off")
+
+    cc_pct = (100 * _dist["cc_set"] / _dist["cc_total"]) if _dist["cc_total"] else 0
+    if _dist["cc_set"] == 0:
+        st.caption(
+            f"⚠ المُصنِّف الجديد خامل — لم يُسجَّل close_comment لأي صفقة بعد. "
+            f"سيُفعَّل تلقائياً بعد إعادة تشغيل المحرّك (Phase A change is dormant until restart)."
+        )
+    else:
+        st.caption(
+            f"تغطية close_comment: {_dist['cc_set']}/{_dist['cc_total']} "
+            f"({cc_pct:.0f}%) — المُصنِّف نشط للصفقات الجديدة."
+        )
+
+st.divider()
+
+
 # ── Inner tabs ───────────────────────────────────────────────────────────────
 inner = st.tabs(["مباشر", "تحليلات", "سجل الصفقات", "الإشارات والظل"])
 

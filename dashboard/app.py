@@ -388,6 +388,53 @@ else:
 st.divider()
 
 
+# ── Recent activity (items completed in the last 7 days) ─────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _recent_completions():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT action_id, category, title, blocking_phase, completed_date "
+            "FROM action_items "
+            "WHERE status = 'DONE' AND completed_date IS NOT NULL "
+            "AND completed_date >= date('now', '-7 days') "
+            "ORDER BY completed_date DESC, action_id LIMIT 5",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+_recent = _recent_completions()
+if not _recent.empty:
+    st.markdown("### ✅ آخر التحديثات (آخر 7 أيام)")
+    for _, it in _recent.iterrows():
+        ph = (
+            f"<span style='background:#1A1F2E;color:#AAA;border:1px solid #2D3748;"
+            f"border-radius:4px;padding:1px 6px;font-size:11px;margin-right:6px'>"
+            f"Phase {int(it['blocking_phase'])}</span>"
+            if pd.notna(it["blocking_phase"]) else ""
+        )
+        st.markdown(
+            f"""
+            <div style="background:#12151C;border-left:3px solid #4CAF50;
+                        border-radius:6px;padding:8px 12px;margin-bottom:6px">
+                <div style="font-size:11px;color:#4CAF50;font-weight:700">
+                    {it['action_id']} · DONE · {it['completed_date']} {ph}
+                </div>
+                <div style="color:#DDD;font-size:13px;margin-top:2px">
+                    {it['title']}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.caption("← التفاصيل في تبويب «بنود التنفيذ»")
+    st.divider()
+
+
 # ── Engine health snapshot ───────────────────────────────────────────────────
 @st.cache_data(ttl=60, show_spinner=False)
 def _engine_health():
