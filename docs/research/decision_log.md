@@ -242,3 +242,38 @@ Fold stability (K=5 on train window): both variants have one deeply negative fol
 - `improvements.db::go_no_go_decisions` — this decision, id=1
 
 ---
+
+## 2026-05-01 — USDCAD dropped from live trading (Phase 7 pre-kickoff)
+
+**Decision:** Remove USDCAD from the live trading symbol set. Live instruments list goes from 7 → 6 symbols.
+
+**Decided by:** project lead, 2026-05-01 in response to Phase 2 R:R analysis
+**Tracker item:** AI-020 (BLOCKING, Phase 7)
+**Source analysis:** `docs/research/phase7_blocker_2_audusd_usdcad_rr_analysis.md`
+
+### Evidence
+
+- Across **40 backtest runs** in `data/backtest_results.db` (7 strategies × 2 timeframes × 3 search rounds), **zero USDCAD configurations achieved a PASS verdict**.
+- Best USDCAD result: `stop_hunt_reversal/D1` grade B (PF 1.06, expectancy +$22.52/trade, Sharpe 1.00) — below the 1.15 PF approval threshold.
+- Most USDCAD configs are net-negative with significant drawdowns (USDCAD/macd_crossover/H4: MDD 50.7%; USDCAD/ml_direct/H4: MDD 58.8%).
+- Live v3 (engine 2.4) USDCAD: **n=11 trades, net PnL −$544.01**. WR 62.5% on bollinger_bounce — exactly on break-even threshold yet $-PF 0.18.
+
+### Rationale
+
+"Try harder with new params" is sunk-cost reasoning when the underlying hypothesis (USDCAD edge exists at the strategies we have) has no data support. Forty backtest runs and one v3 quarter is sufficient evidence to reject.
+
+### Action items
+
+| | |
+|---|---|
+| (a) | Remove USDCAD entry from `config/paper.yaml::instruments` and `config/base.yaml::instruments`. **Pending engine restart approval** — see AI-020. |
+| (b) | Path B re-optimisation (per `phase7_blocker_2_audusd_usdcad_rr_analysis.md`) does NOT run for USDCAD. |
+| (c) | This decision logged here as a Phase 7 pre-kickoff finding. |
+| (d) | Re-evaluate USDCAD inclusion only if a fundamentally different strategy class (not "tune existing further") is added in the future. |
+
+### Cross-references
+
+- `data/backtest_results.db::backtest_runs` — 40 USDCAD rows
+- `data/optimized_params.yaml` — still contains a USDCAD block (atr_sl_mult 2.0 / atr_tp_mult 1.25 → R:R 0.625) which Path B work will leave in place but unused; cleanup deferred to AI-020 implementation
+- `docs/research/phase7_blocker_2_audusd_usdcad_rr_analysis.md` — Phase 2 analysis
+- AI-020 in `data/improvements.db::action_items`
