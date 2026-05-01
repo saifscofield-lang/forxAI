@@ -1,32 +1,46 @@
+"""ForexAI Dashboard — Main entry point + Tab 1 (Where are we?).
+
+Tabs (in sidebar order, all under dashboard/pages/):
+  1. Where are we?  (this file — home / status overview)
+  2. Action Items   (pages/1_action_items.py)
+  3. Decisions      (pages/2_decisions.py)
+  4. Risks          (pages/3_risks.py)
+  5. Trading        (pages/4_trading.py)
+  6. Documents      (pages/5_documents.py)
+
+Run: streamlit run dashboard/app.py
 """
-ForexAI Dashboard — Main Entry Point
-Run with: streamlit run dashboard/app.py
-"""
+from __future__ import annotations
+
 import sys
 sys.path.insert(0, ".")
 
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timezone
+import sqlite3
+from datetime import date, datetime, timezone
 
-# ── Page Config ───────────────────────────────────────────────────────────────
+import pandas as pd
+import streamlit as st
+
+from dashboard.utils.layout import (
+    IMP_DB, PHASE_8_GATE, PHASE_9_TARGET,
+    page_intro, status_header,
+)
+
+
+# ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ForexAI Dashboard",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
-    menu_items={
-        "About": "ForexAI — Algorithmic Forex Trading Platform v3.1",
-    },
+    menu_items={"About": "ForexAI — Algorithmic Forex Trading Platform"},
 )
+
 
 # ── Professional CSS ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Clean dark theme */
     .block-container { padding-top: 1rem; padding-bottom: 0.5rem; max-width: 1400px; }
-
-    /* Metric cards */
     div[data-testid="metric-container"] {
         background: linear-gradient(135deg, #1A1F2E 0%, #151A28 100%);
         border: 1px solid #2D3748;
@@ -34,8 +48,6 @@ st.markdown("""
         padding: 14px 18px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-
-    /* Sidebar */
     div[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0D1117 0%, #0A0E14 100%);
     }
@@ -43,22 +55,14 @@ st.markdown("""
         font-size: 1.3rem;
         letter-spacing: 0.5px;
     }
-
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 4px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
         padding: 8px 20px;
         font-weight: 500;
     }
-
-    /* Alerts */
     div[data-testid="stAlert"] { border-radius: 8px; }
-
-    /* Dividers */
     hr { border-color: #1E2130 !important; margin: 0.8rem 0 !important; }
-
-    /* RTL for Arabic text */
     h1, h2, h3, h4, h5, h6,
     p, span, label, .stMarkdown,
     div[data-testid="stSidebar"],
@@ -69,34 +73,18 @@ st.markdown("""
         direction: rtl;
         text-align: right;
     }
-
-    /* Keep charts, tables, numbers LTR */
     .js-plotly-plot, .stDataFrame, table,
     div[data-testid="metric-container"] [data-testid="stMetricValue"],
     code, pre, .stCodeBlock {
         direction: ltr;
         text-align: left;
     }
-
-    /* Navigation cards in sidebar */
-    .nav-link {
-        display: block;
-        padding: 6px 12px;
-        margin: 2px 0;
-        border-radius: 6px;
-        color: #AAA;
-        text-decoration: none;
-        font-size: 14px;
-        transition: all 0.2s;
-    }
-    .nav-link:hover { background: #1A1F2E; color: #FFF; }
-
-    /* Expander styling */
     .streamlit-expanderHeader { font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+
+# ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center;padding:10px 0 5px 0">
@@ -107,14 +95,13 @@ with st.sidebar:
 
     st.divider()
 
-    # MT5 status (cached 60s)
+    # MT5 status
     @st.cache_data(ttl=60, show_spinner=False)
     def _get_mt5_status():
         from dashboard.utils.mt5_helper import get_connection_status
         return get_connection_status()
 
     status = _get_mt5_status()
-
     if status.get("connected"):
         acc = status.get("account", {})
         st.markdown(f"""
@@ -133,11 +120,9 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Market Status ─────────────────────────────────────────────────────
+    # Market status
     now_utc = datetime.now(timezone.utc)
-    weekday = now_utc.weekday()
-    hour = now_utc.hour
-
+    weekday, hour = now_utc.weekday(), now_utc.hour
     if weekday == 4 and hour >= 22:
         market_open = False
     elif weekday == 5:
@@ -146,7 +131,6 @@ with st.sidebar:
         market_open = False
     else:
         market_open = True
-
     sessions = []
     if market_open:
         if hour >= 22 or hour < 7:
@@ -157,20 +141,16 @@ with st.sidebar:
             sessions.append("London")
         if 13 <= hour < 22:
             sessions.append("New York")
-
     market_color = "#4CAF50" if market_open else "#EF5350"
     market_text = "مفتوح" if market_open else "مغلق"
-    sessions_text = " | ".join(sessions) if sessions else "---"
-
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
         <span style="color:#888">السوق</span>
         <span style="color:{market_color};font-weight:600">{market_text}</span>
     </div>
     """, unsafe_allow_html=True)
-
     if market_open and sessions:
-        st.caption(f"الجلسات: {sessions_text}")
+        st.caption(f"الجلسات: {' | '.join(sessions)}")
 
     # Mode indicator
     try:
@@ -180,10 +160,8 @@ with st.sidebar:
         mode = cfg.get("system", {}).get("mode", "paper").upper()
     except Exception:
         mode = "PAPER"
-
     mode_color = "#FFCA28" if mode == "PAPER" else "#EF5350"
     mode_ar = "ورقي" if mode == "PAPER" else "حقيقي"
-
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
         <span style="color:#888">الوضع</span>
@@ -191,433 +169,282 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Engine pause/active state — inferred from paper_trading.log tail ──
-    # The /pause command sets an in-memory flag in the engine process; we
-    # cannot read it from the dashboard. Inferring from the most recent
-    # scan-related log line is the next-best signal.
-    @st.cache_data(ttl=30, show_spinner=False)
-    def _get_engine_state():
-        from datetime import datetime as _dt, timedelta as _td
-        try:
-            log_path = "data/logs/paper_trading.log"
-            with open(log_path, "rb") as f:
-                f.seek(0, 2)
-                size = f.tell()
-                f.seek(max(0, size - 16384))
-                tail = f.read().decode("utf-8", errors="ignore")
-        except Exception:
-            return None
-        lines = tail.splitlines()[-200:]
-        most_recent_marker = None
-        most_recent_ts = None
-        for line in reversed(lines):
-            if "Trading paused via /pause" in line:
-                most_recent_marker = "paused"
-            elif "complete" in line and "Scan #" in line:
-                most_recent_marker = "active"
-            elif "Scan #" in line and " at " in line:
-                most_recent_marker = "scanning"
-            else:
-                continue
-            try:
-                most_recent_ts = _dt.strptime(line[:19], "%Y-%m-%d %H:%M:%S")
-            except Exception:
-                pass
-            break
-        # Staleness check
-        if most_recent_ts:
-            age_sec = (_dt.now() - most_recent_ts).total_seconds()
-        else:
-            age_sec = 999999
-        return {"marker": most_recent_marker, "age_sec": age_sec, "ts": most_recent_ts}
-
-    eng = _get_engine_state()
-    if eng and eng["marker"]:
-        marker = eng["marker"]
-        age_min = eng["age_sec"] / 60
-        # 90 min between scans is acceptable (hourly cadence + jitter); >180 = engine silent
-        if age_min > 180:
-            label, color = "صامت / silent", "#EF5350"
-        elif marker == "paused":
-            label, color = "موقوف / paused", "#FFCA28"
-        elif marker in ("active", "scanning"):
-            label, color = "نشط / active", "#4CAF50"
-        else:
-            label, color = "غير معروف", "#888"
-        st.markdown(
-            f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px'>"
-            f"<span style='color:#888'>المحرّك</span>"
-            f"<span style='color:{color};font-weight:600'>{label}</span>"
-            f"</div>"
-            f"<div style='color:#666;font-size:11px;text-align:right;margin-top:-4px'>"
-            f"آخر نشاط: {age_min:.0f} دقيقة"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if marker == "paused":
-            st.caption("لاستئناف: أرسل `/resume` في Telegram")
-
     st.divider()
 
-    # ── News Alerts ───────────────────────────────────────────────────────
+    # News alerts (next 4h, high-impact only)
     from dashboard.utils.db import get_upcoming_news
     upcoming = get_upcoming_news(hours_ahead=4)
     if not upcoming.empty:
-        high_impact = upcoming[upcoming["impact"] == "HIGH"]
-        if not high_impact.empty:
-            st.warning(f"{len(high_impact)} أخبار عالية التأثير قادمة")
-            for _, row in high_impact.iterrows():
+        high = upcoming[upcoming["impact"] == "HIGH"]
+        if not high.empty:
+            st.warning(f"{len(high)} أخبار عالية التأثير قادمة")
+            for _, row in high.iterrows():
                 t = row["time"].strftime("%H:%M") if hasattr(row["time"], "strftime") else str(row["time"])
                 st.caption(f"  {t} -- {row['currency']} -- {row['event_name']}")
-        else:
-            med = upcoming[upcoming["impact"] == "MEDIUM"]
-            if not med.empty:
-                st.info(f"{len(med)} أخبار متوسطة التأثير")
     else:
-        st.markdown('<div style="color:#4CAF50;font-size:13px;padding:4px 0">لا أخبار مؤثرة قريبة</div>', unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── v3 / v4 status pill (auto-refreshes from DB) ─────────────────────
-    @st.cache_data(ttl=60, show_spinner=False)
-    def _get_version_status():
-        import sqlite3
-        v3_label = "STABLE"
-        v4_label = "not started"
-        v4_color = "#666"
-        try:
-            con = sqlite3.connect("data/improvements.db")
-            # v4 verdict from latest go_no_go_decisions row for phase 10
-            cur = con.execute(
-                "SELECT verdict, gates_passed, gates_total FROM go_no_go_decisions "
-                "WHERE phase_number = 10 ORDER BY decision_date DESC, id DESC LIMIT 1"
-            )
-            row = cur.fetchone()
-            # Phase 10.5 activation state (encoded as 105)
-            cur = con.execute("SELECT status FROM project_phases WHERE phase_number = 105")
-            p105 = cur.fetchone()
-            con.close()
-            if row:
-                verdict, gp, gt = row
-                v4_label = f"{verdict} ({gp or 0}/{gt or 0})"
-                v4_color = {"GREEN": "#4CAF50", "YELLOW": "#FFCA28", "RED": "#EF5350"}.get(verdict, "#666")
-                if p105 and p105[0] == "PENDING_ACTIVATION":
-                    v4_label += " — Phase 10.5 candidate"
-        except Exception:
-            pass
-        return v3_label, v4_label, v4_color
-
-    try:
-        v3_lbl, v4_lbl, v4_clr = _get_version_status()
         st.markdown(
-            f"<div style='background:#0D1117;border:1px solid #2D3748;border-radius:8px;padding:8px 12px;margin-bottom:6px;font-size:12px'>"
-            f"<div style='display:flex;justify-content:space-between;align-items:center'>"
-            f"<span style='color:#888'>v3</span>"
-            f"<span style='color:#4CAF50;font-weight:600'>{v3_lbl}</span>"
-            f"</div>"
-            f"<div style='display:flex;justify-content:space-between;align-items:center;margin-top:4px'>"
-            f"<span style='color:#888'>v4</span>"
-            f"<span style='color:{v4_clr};font-weight:600;font-size:11px'>{v4_lbl}</span>"
-            f"</div>"
-            f"</div>",
+            '<div style="color:#4CAF50;font-size:13px;padding:4px 0">لا أخبار مؤثرة قريبة</div>',
             unsafe_allow_html=True,
         )
-    except Exception:
-        pass
 
+    st.divider()
     st.caption(f"{now_utc.strftime('%H:%M:%S')} UTC")
-
     if st.button("تحديث البيانات", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# ── Home Page Content ─────────────────────────────────────────────────────────
-st.markdown("""
-<div style="margin-bottom:16px">
-    <span style="font-size:26px;font-weight:800;color:#FFF">لوحة التداول</span>
-    <span style="font-size:14px;color:#666;margin-right:12px">v3.1 | Paper Trading</span>
-</div>
-""", unsafe_allow_html=True)
 
-# ── Meeting-outcomes banner (latest go/no-go from improvements.db) ────────────
-@st.cache_data(ttl=300, show_spinner=False)
-def _get_latest_meeting_summary():
-    import sqlite3
+# ── Main content — Tab 1 (Where are we?) ─────────────────────────────────────
+status_header()
+page_intro(
+    arabic_title="أين نحن؟",
+    arabic_subtitle="نظرة سريعة على حالة المشروع — المرحلة، البنود الحرجة، آخر القرارات، والمحرّك",
+)
+
+
+# ── Phase status header (5-card row) ─────────────────────────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _all_phases():
     try:
-        con = sqlite3.connect("data/improvements.db")
-        votes = con.execute(
-            "SELECT decision_date, verdict, COUNT(*) FROM go_no_go_decisions "
-            "WHERE decided_by LIKE 'meeting_%' "
-            "GROUP BY decision_date, verdict "
-            "ORDER BY decision_date DESC"
-        ).fetchall()
-        if not votes:
-            con.close()
-            return None
-        # Group by date
-        latest_date = votes[0][0]
-        same_date = [v for v in votes if v[0] == latest_date]
-        n_total = sum(v[2] for v in same_date)
-        n_red = sum(v[2] for v in same_date if v[1] == "RED")
-        n_yellow = sum(v[2] for v in same_date if v[1] == "YELLOW")
-        # Days to next gate (Phase 8 gate Jun 1)
-        from datetime import date
-        gate = date(2026, 6, 1)
-        days = (gate - date.today()).days
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT phase_number, name, status, started_at, completed_at "
+            "FROM project_phases WHERE phase_number BETWEEN 6 AND 9 "
+            "ORDER BY phase_number",
+            con,
+        )
         con.close()
-        return {"date": latest_date, "n_total": n_total, "n_red": n_red,
-                "n_yellow": n_yellow, "gate_days": days}
+        return df
     except Exception:
-        return None
+        return pd.DataFrame()
 
-_meeting = _get_latest_meeting_summary()
-if _meeting:
-    border = "#EF5350" if _meeting["n_red"] > 0 else ("#FFCA28" if _meeting["n_yellow"] > 0 else "#4CAF50")
-    badge = "🔴" if _meeting["n_red"] > 0 else ("🟡" if _meeting["n_yellow"] > 0 else "🟢")
-    days_color = "#EF5350" if _meeting["gate_days"] <= 14 else ("#FFCA28" if _meeting["gate_days"] <= 30 else "#888")
-    st.markdown(
-        f"<div style='background:#12151C;border-left:4px solid {border};border-radius:8px;"
-        f"padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:18px'>"
-        f"<span style='font-size:18px'>📋</span>"
-        f"<span style='color:#CCC;font-size:13px'>"
-        f"<b style='color:#FFF'>Meeting {_meeting['date']}</b>: "
-        f"{_meeting['n_total']} votes decided  {badge}  "
-        f"<span style='color:#999'>(R={_meeting['n_red']} Y={_meeting['n_yellow']})</span>"
-        f"</span>"
-        f"<span style='color:{days_color};font-size:12px;margin-left:auto'>"
-        f"<b>{_meeting['gate_days']} days</b> to Phase 8 gate (Jun 1)"
-        f"</span>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-    try:
-        st.page_link("pages/15_Meeting_Outcomes.py",
-                       label="View meeting outcomes, blockers, and risks",
-                       icon="📋")
-    except Exception:
-        st.caption("→ Meeting Outcomes page (sidebar nav)")
-
-# ── Overview KPIs ─────────────────────────────────────────────────────────────
-from dashboard.utils.db import get_performance_summary, get_signal_stats, get_latest_snapshot, get_open_trades
-
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-summary = get_performance_summary()
-signals = get_signal_stats()
-snap = get_latest_snapshot()
-open_trades = get_open_trades()
-
-with col1:
-    st.metric("إجمالي الصفقات", summary["total_trades"])
-with col2:
-    wr = summary["win_rate"]
-    st.metric("نسبة الفوز", f"{wr:.1f}%", delta_color="off")
-with col3:
-    pnl = summary["total_pnl"]
-    st.metric("صافي الربح", f"${pnl:+,.2f}", delta_color="normal")
-with col4:
-    pf = summary["profit_factor"]
-    color = "normal" if pf >= 1.0 else "inverse"
-    st.metric("عامل الربح", f"{pf:.3f}", delta_color=color)
-with col5:
-    st.metric("الصفقات المفتوحة", len(open_trades))
-with col6:
-    dd = summary["max_drawdown"]
-    st.metric("أقصى تراجع", f"${dd:,.2f}", delta_color="inverse")
-
-st.divider()
-
-# ── Main Dashboard ────────────────────────────────────────────────────────────
-col_left, col_right = st.columns([3, 2])
-
-with col_left:
-    from dashboard.utils.db import get_equity_curve
-    from dashboard.components.charts import equity_curve_chart, drawdown_chart
-
-    st.subheader("منحنى رأس المال")
-    days = st.slider("عدد الأيام", 7, 365, 30, key="home_days")
-    eq_df = get_equity_curve(days=days)
-    st.plotly_chart(equity_curve_chart(eq_df), width="stretch", key="home_equity")
-
-    if not eq_df.empty:
-        st.plotly_chart(drawdown_chart(eq_df), width="stretch", key="home_dd")
-
-with col_right:
-    from dashboard.components.charts import signal_status_bar, win_loss_pie
-    from dashboard.utils.db import get_trade_results
-
-    st.subheader("نتائج الإشارات")
-    st.plotly_chart(signal_status_bar(signals), width="stretch", key="home_signals")
-
-    st.subheader("ربح / خسارة")
-    results_df = get_trade_results(limit=1000)
-    st.plotly_chart(win_loss_pie(results_df), width="stretch", key="home_winloss")
-
-st.divider()
-
-# ── Symbol Breakdown Table ────────────────────────────────────────────────────
-from dashboard.utils.db import get_symbol_breakdown
-
-st.subheader("الأداء حسب الزوج")
-sym_df = get_symbol_breakdown()
-if not sym_df.empty:
-    def _color_pf(val):
-        if val >= 1.2:
-            return "color: #00C851; font-weight: bold"
-        elif val >= 1.0:
-            return "color: #FFCA28"
-        return "color: #FF4444"
-
-    def _color_pnl(val):
-        return "color: #00C851" if val >= 0 else "color: #FF4444"
-
-    styled = sym_df.style.format({
-        "win_rate": "{:.1f}%",
-        "total_pnl": "${:+,.2f}",
-        "profit_factor": "{:.3f}",
-        "avg_pnl": "${:+,.2f}",
-    }).map(_color_pf, subset=["profit_factor"]).map(_color_pnl, subset=["total_pnl", "avg_pnl"])
-
-    st.dataframe(styled, width="stretch", hide_index=True)
-else:
-    st.info("لا توجد صفقات مغلقة بعد.")
-
-st.divider()
-
-# ── Recent Activity ───────────────────────────────────────────────────────────
-st.subheader("آخر الإشارات")
-from dashboard.utils.db import get_signal_log
-
-recent_signals = get_signal_log(limit=10, days=7)
-if not recent_signals.empty:
-    display_cols = ["time", "symbol", "action", "price", "status", "ml_confidence", "reason"]
-    cols_present = [c for c in display_cols if c in recent_signals.columns]
-    st.dataframe(
-        recent_signals[cols_present].style.format({
-            "price": "{:.5f}",
-            "ml_confidence": lambda x: f"{x:.1%}" if pd.notna(x) else "-",
-        }),
-        width="stretch",
-        hide_index=True,
-    )
-else:
-    st.info("لا توجد إشارات بعد.")
-
-# ── Next Actions (live from improvements.db / Project Tracker) ───────────────
-st.divider()
-st.subheader("أهم المهام المعلّقة — Next Actions")
 
 @st.cache_data(ttl=120, show_spinner=False)
-def _get_top_pending_tasks():
-    """Pull the most-pressing pending work from the project tracker DB.
-
-    Returns (blocking_actions, active_phase_steps).
-    BLOCKING action_items rank above MONITORING/SHADOW/DOCS; phase steps come
-    only from phases currently IN_PROGRESS or PENDING_ACTIVATION."""
-    import sqlite3
-    blocking, steps = [], []
+def _phase_steps(phase_number: int):
     try:
-        con = sqlite3.connect("data/improvements.db")
-        cat_rank = "CASE category WHEN 'BLOCKING' THEN 0 WHEN 'MONITORING' THEN 1 "\
-                   "WHEN 'SHADOW' THEN 2 WHEN 'DOCS' THEN 3 ELSE 4 END"
-        rows = con.execute(
-            f"SELECT action_id, category, title, blocking_phase, due_date "
-            f"FROM action_items WHERE status='OPEN' "
-            f"ORDER BY {cat_rank}, blocking_phase NULLS LAST, created_date DESC LIMIT 6"
-        ).fetchall()
-        blocking = [
-            {"id": r[0], "category": r[1], "title": r[2],
-             "phase": r[3], "due": r[4]} for r in rows
-        ]
-        rows = con.execute(
-            "SELECT ps.phase_number, pp.name, ps.step_order, ps.description "
-            "FROM phase_steps ps JOIN project_phases pp "
-            "  ON pp.phase_number = ps.phase_number "
-            "WHERE pp.status IN ('IN_PROGRESS','PENDING_ACTIVATION') "
-            "  AND ps.status IN ('PENDING','IN_PROGRESS') "
-            "ORDER BY ps.phase_number, ps.step_order LIMIT 6"
-        ).fetchall()
-        steps = [
-            {"phase": r[0], "phase_name": r[1], "order": r[2], "desc": r[3]}
-            for r in rows
-        ]
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT step_order, status FROM phase_steps "
+            "WHERE phase_number = ? ORDER BY step_order",
+            con, params=(phase_number,),
+        )
         con.close()
+        return df
     except Exception:
-        pass
-    return blocking, steps
+        return pd.DataFrame()
 
-_blocking, _steps = _get_top_pending_tasks()
 
-_cat_color = {"BLOCKING": "#EF5350", "MONITORING": "#FFCA28",
-              "SHADOW": "#42A5F5", "DOCS": "#888"}
-
-col_a, col_b = st.columns(2)
-
-with col_a:
-    st.markdown("**🚧 إجراءات عاجلة (Action Items)**")
-    if _blocking:
-        for it in _blocking:
-            color = _cat_color.get(it["category"], "#888")
-            phase_chip = (f"<span style='background:#1A1F2E;color:#AAA;border:1px solid #2D3748;"
-                          f"border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px'>"
-                          f"Phase {it['phase']}</span>") if it["phase"] else ""
-            due_chip = (f"<span style='color:#888;font-size:11px;margin-left:6px'>"
-                        f"due {it['due']}</span>") if it["due"] else ""
+phases = _all_phases()
+if phases.empty:
+    st.warning("تعذّر تحميل بيانات المراحل.")
+else:
+    cols = st.columns(len(phases))
+    status_color = {
+        "IN_PROGRESS": "#42A5F5", "NOT_STARTED": "#888",
+        "DEFERRED": "#FFCA28", "COMPLETED": "#4CAF50",
+        "PENDING_ACTIVATION": "#9C27B0",
+    }
+    for col, (_, ph) in zip(cols, phases.iterrows()):
+        steps = _phase_steps(int(ph["phase_number"]))
+        n_total = len(steps)
+        n_done = int((steps["status"] == "COMPLETED").sum()) if n_total else 0
+        clr = status_color.get(ph["status"], "#888")
+        sub = ""
+        if int(ph["phase_number"]) == 8:
+            d = (PHASE_8_GATE - date.today()).days
+            sub = f"بوابة 1 يونيو · {d} يوم"
+        elif int(ph["phase_number"]) == 9:
+            d = (PHASE_9_TARGET - date.today()).days
+            sub = f"هدف 1 سبتمبر · {d} يوم"
+        elif n_total > 0:
+            sub = f"{n_done}/{n_total} خطوات"
+        with col:
             st.markdown(
-                f"<div style='background:#12151C;border-left:3px solid {color};"
-                f"border-radius:6px;padding:8px 12px;margin-bottom:6px'>"
-                f"<div style='font-size:11px;color:{color};font-weight:700'>"
-                f"{it['category']} · {it['id']}{phase_chip}{due_chip}</div>"
-                f"<div style='color:#DDD;font-size:13px;margin-top:2px'>{it['title']}</div>"
-                f"</div>",
+                f"""
+                <div style="background:#12151C;border:1px solid #2D3748;
+                            border-left:4px solid {clr};border-radius:8px;
+                            padding:12px 14px;min-height:110px">
+                    <div style="font-size:11px;color:#888;font-weight:600">
+                        Phase {int(ph['phase_number'])}
+                    </div>
+                    <div style="font-size:14px;color:#FFF;font-weight:700;margin:4px 0 8px 0">
+                        {ph['name']}
+                    </div>
+                    <div style="font-size:11px;color:{clr};font-weight:700">
+                        {ph['status']}
+                    </div>
+                    <div style="font-size:11px;color:#AAA;margin-top:4px">
+                        {sub}
+                    </div>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
-    else:
-        st.info("لا توجد إجراءات معلّقة.")
 
-with col_b:
-    st.markdown("**▶ خطوات المراحل النشطة (Active Phases)**")
-    if _steps:
-        for s in _steps:
-            desc = s["desc"][:120] + ("…" if len(s["desc"]) > 120 else "")
-            st.markdown(
-                f"<div style='background:#12151C;border-left:3px solid #42A5F5;"
-                f"border-radius:6px;padding:8px 12px;margin-bottom:6px'>"
-                f"<div style='font-size:11px;color:#42A5F5;font-weight:700'>"
-                f"Phase {s['phase']} · Step {s['order']} "
-                f"<span style='color:#888;font-weight:400'>· {s['phase_name']}</span></div>"
-                f"<div style='color:#DDD;font-size:13px;margin-top:2px'>{desc}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("لا توجد خطوات معلّقة في المراحل النشطة.")
-
-try:
-    st.page_link("pages/13_Project_Tracker.py",
-                 label="فتح Project Tracker الكامل",
-                 icon="📋")
-except Exception:
-    st.caption("→ Project Tracker (sidebar nav)")
-
-# ── Quick Navigation ──────────────────────────────────────────────────────────
 st.divider()
-st.subheader("التنقل السريع")
 
-nav_cols = st.columns(5)
-pages = [
-    ("الماسح", "مسح وتنفيذ الإشارات"),
-    ("الصفقات", "الصفقات المفتوحة + المونيتور"),
-    ("التحليلات", "Sharpe, Sortino, Calmar"),
-    ("التقارير", "تقرير يومي + Telegram"),
-    ("الاتصال", "حالة MT5 + الأخطاء"),
-]
 
-for col, (name, desc) in zip(nav_cols, pages):
-    with col:
-        st.markdown(f"""
-        <div style="background:#1A1F2E;border:1px solid #2D3748;border-radius:10px;padding:16px;text-align:center;min-height:80px">
-            <div style="font-size:15px;font-weight:700;color:#FFF">{name}</div>
-            <div style="font-size:12px;color:#888;margin-top:4px">{desc}</div>
-        </div>
-        """, unsafe_allow_html=True)
+# ── Top 5 blocking action items ──────────────────────────────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _top_blockers():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT action_id, category, title, blocking_phase, status "
+            "FROM action_items "
+            "WHERE status IN ('OPEN','IN_PROGRESS') AND category='BLOCKING' "
+            "ORDER BY blocking_phase NULLS LAST, "
+            "CASE status WHEN 'IN_PROGRESS' THEN 0 ELSE 1 END, "
+            "created_date DESC LIMIT 5",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+st.markdown("### 🚧 ما يجب التركيز عليه الآن")
+top = _top_blockers()
+if top.empty:
+    st.success("لا توجد بنود حرجة مفتوحة.")
+else:
+    for _, it in top.iterrows():
+        ph_chip = (
+            f"<span style='background:#1A1F2E;color:#AAA;border:1px solid #2D3748;"
+            f"border-radius:4px;padding:1px 6px;font-size:11px;margin-right:6px'>"
+            f"Phase {int(it['blocking_phase'])}</span>"
+            if pd.notna(it["blocking_phase"]) else ""
+        )
+        status_chip = (
+            f"<span style='background:#1F2937;color:#42A5F5;border-radius:4px;"
+            f"padding:1px 6px;font-size:11px;margin-right:6px'>{it['status']}</span>"
+            if it["status"] == "IN_PROGRESS" else ""
+        )
+        st.markdown(
+            f"""
+            <div style="background:#12151C;border-left:3px solid #EF5350;
+                        border-radius:6px;padding:8px 12px;margin-bottom:6px">
+                <div style="font-size:11px;color:#EF5350;font-weight:700">
+                    {it['action_id']} {ph_chip}{status_chip}
+                </div>
+                <div style="color:#DDD;font-size:13px;margin-top:2px">
+                    {it['title']}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.caption("← القائمة الكاملة في تبويب «بنود التنفيذ»")
+
+st.divider()
+
+
+# ── Last 3 decisions ─────────────────────────────────────────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _last_decisions():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT decision_date, phase_number, verdict, decided_by, next_action "
+            "FROM go_no_go_decisions "
+            "ORDER BY decision_date DESC, id DESC LIMIT 3",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+st.markdown("### 📋 آخر القرارات")
+dec = _last_decisions()
+verdict_color = {"GREEN": "#4CAF50", "YELLOW": "#FFCA28", "RED": "#EF5350"}
+if dec.empty:
+    st.info("لا توجد قرارات مسجلة بعد.")
+else:
+    for _, d in dec.iterrows():
+        v_clr = verdict_color.get(d["verdict"], "#888")
+        ph_str = f"Phase {int(d['phase_number'])}" if pd.notna(d.get("phase_number")) else "—"
+        st.markdown(
+            f"""
+            <div style="background:#12151C;border-left:3px solid {v_clr};
+                        border-radius:6px;padding:8px 12px;margin-bottom:6px">
+                <div style="font-size:11px;color:{v_clr};font-weight:700">
+                    {d['verdict']} · {d['decision_date']} · {ph_str}
+                </div>
+                <div style="color:#DDD;font-size:13px;margin-top:2px">
+                    {d['decided_by']}
+                </div>
+                <div style="color:#888;font-size:12px;margin-top:4px">
+                    التالي: {d['next_action'] or '—'}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    st.caption("← السجل الكامل في تبويب «القرارات»")
+
+st.divider()
+
+
+# ── Engine health snapshot ───────────────────────────────────────────────────
+@st.cache_data(ttl=60, show_spinner=False)
+def _engine_health():
+    try:
+        from dashboard.utils.mt5_helper import get_connection_status
+        s = get_connection_status() or {}
+    except Exception:
+        s = {}
+    info = {
+        "mt5_connected": bool(s.get("connected")),
+        "balance": (s.get("account") or {}).get("balance"),
+        "login": (s.get("account") or {}).get("login"),
+        "error": s.get("error"),
+    }
+    try:
+        con = sqlite3.connect("data/trading.db")
+        n_open = con.execute("SELECT COUNT(*) FROM trades WHERE is_closed=0").fetchone()[0]
+        con.close()
+        info["n_open"] = n_open
+    except Exception:
+        info["n_open"] = None
+    try:
+        with open("data/logs/paper_trading.log", "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 65536))
+            tail = f.read().decode("utf-8", errors="ignore")
+        cfg_lines = [ln for ln in tail.splitlines() if "[CONFIG]" in ln]
+        info["last_config"] = cfg_lines[-1] if cfg_lines else None
+    except Exception:
+        info["last_config"] = None
+    return info
+
+
+st.markdown("### ⚙️ صحة المحرّك")
+h = _engine_health()
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    if h["mt5_connected"]:
+        st.metric("MT5", "متصل", delta_color="off")
+        st.caption(f"حساب {h.get('login') or '—'}")
+    else:
+        st.metric("MT5", "غير متصل", delta_color="off")
+        if h.get("error"):
+            st.caption(h["error"][:50])
+with c2:
+    if h["balance"] is not None:
+        st.metric("الرصيد", f"${h['balance']:,.0f}")
+with c3:
+    if h["n_open"] is not None:
+        st.metric("صفقات مفتوحة", h["n_open"])
+with c4:
+    cfg = h.get("last_config")
+    if cfg:
+        st.metric("آخر [CONFIG]", cfg[:19])
+    else:
+        st.metric("آخر [CONFIG]", "—")
+
+if h.get("last_config"):
+    st.caption(f"`{h['last_config'][:200]}`")
