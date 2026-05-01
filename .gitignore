@@ -16,6 +16,7 @@ data/models/
 
 # نسخ احتياطية لقاعدة بيانات التتبع
 data/improvements.db.bak.*
+data/trading.db.bak.*
 
 # نسخ احتياطية قبل التغييرات الحرجة (تحتوي على trading.db ~150MB)
 backups/
