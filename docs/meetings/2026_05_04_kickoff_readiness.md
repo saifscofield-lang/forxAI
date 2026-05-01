@@ -18,7 +18,7 @@
 | 1 | **Path B optimiser scope** — AUDUSD only? Or all 6 remaining symbols? | AUDUSD only; others in separate audit | strategy |
 | 2 | **Training corpus α / β / γ** | β with cap=20, stratified-by-outcome — most balanced | strategy |
 | 3 | **β cap value** (only if β chosen) | 20 (n=102) | strategy |
-| 4 | **AI-017b sequencing** — fix before May 18 (Step 6) so α/β can use `exit_reason`, or exclude that feature class? | **STATUS UPDATE 2026-05-01:** Phase A shipped (classifier + `close_comment` storage; engine fix dormant until restart). Phase B backfill pending engine restart + validation gate. Once Phase B clears, α/β can use `exit_reason_v2` cleanly for training. Decision is now sequencing of Phase B vs the May 18 train date, not whether to fix at all. | engineering |
+| 4 | **AI-017b sequencing** — fix before May 18 (Step 6) so α/β can use `exit_reason`, or exclude that feature class? | **STATUS 2026-05-01: BOTH PHASES SHIPPED.** Phase A (classifier + `close_comment` capture) and Phase B (`exit_reason_v2` column + 319-trade backfill) both committed. 137 of 247 SL_HIT labels reclassified (55%): 96 → TRAILING_STOP, 41 → BE_HIT. 0 false positives in control gate. α/β/γ training corpus can use `exit_reason_v2` directly as feature/label. Decision #4 reduces to "α / β / γ" without the contamination caveat. | done |
 | 5 | **MACD/RSI training backfill source** — v1/v2 trades, `signal_logs` replay, or reorder Phase 7 plan? | `signal_logs` replay (cleanest; same engine bias) | engineering |
 | 6 | **AI-004b spec confirmation** — multi-file hash + cross-config consistency check on `strategy_blacklist`? | Per spec at end of `phase7_blocker_2_*.md`; ship before Jun 1 | engineering |
 
@@ -41,9 +41,19 @@ Restart still **deferred**. End-of-session restart preferred so the project lead
 2. Once restart is approved, the AI-020 yaml edits (remove USDCAD from `paper.yaml::instruments` and `base.yaml::instruments`) can ship. **Do not edit yaml without restart in the same window** — otherwise on-disk drift between memory and file violates the operational invariant AI-004 was meant to detect.
 3. `[CONFIG]` log line at startup will then show 6 instruments (was 7) and the existing blacklist (2 entries: ml_direct/XAUUSD, ml_filtered_sma/XAUUSD).
 
+## Data quality observations for the kickoff
+
+Items the kickoff inherits as background — not decisions, but context for the discussion:
+
+1. **TRAILING_STOP is a major v3 exit category, not a niche** (~30% of closed trades, n=96). Up to 2026-05-01 these were tagged `SL_HIT` and counted as adverse losses; AI-017b Phase B reclassified them. Strategies that produce many trailing-stop closes have very different risk dynamics than strategies that produce real SL hits. Worth checking strategy-retention criteria don't penalise them as if they were losses.
+
+2. **AI-017b reclassification ground-truth quality is *strengthening*, not weakening, going into Phase 7.** Today's Phase B classifier uses price-based inference. The new `close_comment` column from Phase A starts capturing direct MT5 evidence for every future close. AI-021 (prospective `sl_modifications` log, deferred to Phase 8) will close the remaining inference gap. The inferred classification today is sound (verified at the gate); the direct evidence accumulates over time.
+
+3. **`trades.stop_loss` is frozen at order placement** (the engine modifies SL via `mt5.position_modify` but never writes back to the DB). This is the SL persistence opacity that AI-021 will close prospectively. Any analysis that reads `trades.stop_loss` as "the SL the trade actually closed against" will be wrong by some unknown amount; use `signal_logs.stop_loss` (original) + `exit_reason_v2` (classifier verdict) instead.
+
 ## What I read into the meeting
 
-The session shifted yesterday's "Phase 7 has 3 blockers" picture to "Phase 7 is mostly already-cleared, but two structural data-quality issues (AI-017b and AI-019) plus one infrastructure gap (AI-004b) materially change the May 4 → Jun 8 risk profile". The training-corpus choice (α/β/γ) is the single decision with the largest downstream impact — it determines whether the meta-labeler trains on a 26%-corrupted dominant-cell-overfit corpus, a half-cleaned middle path, or a small clean retired-strategy corpus. None of the three options is obviously right — the decision is genuinely a trade-off between data volume, contamination, and corpus representativeness.
+The session shifted yesterday's "Phase 7 has 3 blockers" picture to "Phase 7 is mostly already-cleared, but two structural data-quality issues (AI-017b and AI-019) plus one infrastructure gap (AI-004b) materially change the May 4 → Jun 8 risk profile". The AI-017b classifier shipped 2026-05-01 — that issue is now closed and `exit_reason_v2` is clean ground truth. The training-corpus choice (α/β/γ) is now the single decision with the largest downstream impact — it determines whether the meta-labeler trains on the full v3 corpus, a stratified-cap subset, or a retired-strategies-only sample. With contamination resolved, the α/β/γ trade-off is now genuinely about data volume vs corpus representativeness.
 
 ---
 

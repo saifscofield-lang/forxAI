@@ -277,3 +277,53 @@ Fold stability (K=5 on train window): both variants have one deeply negative fol
 - `data/optimized_params.yaml` — still contains a USDCAD block (atr_sl_mult 2.0 / atr_tp_mult 1.25 → R:R 0.625) which Path B work will leave in place but unused; cleanup deferred to AI-020 implementation
 - `docs/research/phase7_blocker_2_audusd_usdcad_rr_analysis.md` — Phase 2 analysis
 - AI-020 in `data/improvements.db::action_items`
+
+## 2026-05-01 — AI-017b Phases A + B complete
+
+**Decision:** Mark `AI-017b` (BLOCKING, Phase 7) **DONE**. The exit-reason classifier shipped, the 319-trade backfill validated, and the meta-labeler training-set decision (Phase 7 kickoff item #4) is unblocked.
+
+**Decided by:** project lead, 2026-05-01 after manual verification gate
+**Tracker items affected:** `AI-017b` → DONE; `AI-021` → NEW (MEDIUM, Phase 8, MONITORING)
+**Source code:**
+- `analysis/exit_classifier.py` (NEW — 0.10 × ATR threshold classifier)
+- `engine/trading_engine.py:1097–1186` (close handler refactored to feed classifier + capture `close_comment`)
+- `storage/database.py::TradeResult.{close_comment, exit_reason_v2}` (new columns)
+- `scripts/migrate_add_close_comment.py`, `scripts/migrate_add_exit_reason_v2.py`, `scripts/backfill_exit_reason_v2.py`, `scripts/verify_exit_classifier.py`
+- `docs/research/ai017_supplemental_findings_2026_05_01.md` (corrected substring claim, documented modified-SL mechanism + threshold rationale)
+
+### Phase B headline numbers
+
+| Aggregate transition | Count |
+|---|---:|
+| `SL_HIT` → `SL_HIT` (real adverse stops) | 111 |
+| `SL_HIT` → `TRAILING_STOP` (favorable, close not at original SL) | **96** |
+| `SL_HIT` → `BE_HIT` (close ≈ open, small / zero PnL) | 41 |
+| `TP_HIT` → `TP_HIT` (unchanged) | 71 |
+| **Total reclassified out of `SL_HIT`** | **137 / 247 (55%)** |
+
+Validation gate cleared with **0 false positives** in the 10 control rows (highest-loss SL_HIT trades, all of which retained `SL_HIT` with `ratio_to_orig_sl = 0.0%`). Manual verification on 10 sampled rows (5 TRAILING_STOP + 3 BE_HIT + 2 SL_HIT) all passed criteria.
+
+### Notable: TRAILING_STOP is a major exit category, not a niche
+
+The pre-Phase-B prediction was `TRAILING_STOP = 0` ("category exists for completeness, will populate as future trades use trailing-stop strategies"). The actual count was **96 — about 30% of v3 closed trades**. Trailing-stop closes with positive PnL ($14–$167 per trade in the sample) are a primary exit mechanism in v3, not a fringe case. This finding is upstream of the Phase 7 training-set decision and the strategy-retention narrative — strategies producing 30% trailing-stop closes have very different risk dynamics than strategies producing 30% real SL hits, even when MT5 reports both as "SL hit".
+
+This is a **finding for the May 4 kickoff** in its own right. Folded into the kickoff readiness 1-pager.
+
+### SL persistence opacity (deferred to AI-021)
+
+`trades.stop_loss` is frozen at order placement. The engine modifies SL via `mt5.position_modify` at `engine/trading_engine.py:1583` (break-even), `:1651`, `:1664` (trailing), but the close handler does not persist the modified value back to `trades.stop_loss`. There is no `sl_modifications` log table.
+
+For the AI-017b classifier this isn't load-bearing — price-based inference (close direction, distance from original SL via `signal_logs.stop_loss`) is sound and the manual verification confirmed it. But future investigations (and the meta-labeler if it ever wants direct SL-trajectory features) need persistent SL-modification evidence. **AI-021** raised: prospective sl_modifications logging, deferred until after AI-001 (zero-BUY) lands.
+
+### Phase 7 unblock status
+
+Phase 7 kickoff (May 4) inherits a clean `exit_reason_v2` column on all v3 trades. The α/β/γ training-set proposal can use exit_reason as a feature without contamination concern. Decision #4 in the kickoff readiness 1-pager moves from "should we use exit_reason at all" to "ship Phase B before May 18 Step 6 (already done) so α/β can use it cleanly".
+
+Phase 7 BLOCKING items remaining: **2** (AI-017 still IN_PROGRESS pending project-lead close decision; AI-020 USDCAD removal pending engine restart approval).
+
+### Cross-references
+
+- `docs/research/ai017_supplemental_findings_2026_05_01.md` — corrected root-cause section + Phase A implementation details
+- `docs/research/phase7_training_set_proposal.md` — α/β/γ options now actionable
+- `docs/meetings/2026_05_04_kickoff_readiness.md` — decision #4 status updated
+- AI-021 in `data/improvements.db::action_items`
