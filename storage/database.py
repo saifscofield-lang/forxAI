@@ -129,6 +129,7 @@ class TradeResult(Base):
     pnl             = Column(Float)                   # Profit/Loss in $
     pnl_pips        = Column(Float)                   # Profit/Loss in pips
     exit_reason     = Column(String(20))              # SL_HIT | TP_HIT | BE_HIT | TRAILING_STOP | MANUAL | UNKNOWN
+    exit_reason_v2  = Column(String(20), nullable=True)  # AI-017b refined classifier output (Phase B backfill 2026-05-01)
     profitable      = Column(Boolean)                 # True if pnl > 0
     close_comment   = Column(String, nullable=True)   # Raw MT5 close-deal comment (AI-017b evidence)
     ml_confidence   = Column(Float, nullable=True)    # ML confidence at entry
