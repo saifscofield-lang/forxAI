@@ -38,19 +38,37 @@ Yesterday's Phase 7 Blocker #1 ("populate realized_rr") is **not** a build job. 
 - Engine-version trend: 0% (v2.0–v2.2) → 5% (v2.1) → **50% (v2.3)** → **27% (v2.4)**. The bug has always been latent; its surface area exploded in v2.3 with the introduction of trailing/break-even close paths.
 
 ### Root cause
-`engine/trading_engine.py:1109-1116`:
 
-```python
-comment = (close_deal.comment or "").upper()
-if "SL" in comment or "STOP LOSS" in comment:
-    exit_reason = "SL_HIT"
-elif "TP" in comment or "TAKE PROFIT" in comment:
-    exit_reason = "TP_HIT"
-else:
-    exit_reason = "MANUAL"
-```
+> **Correction (2026-05-01 Phase A):** The original entry below claimed the substring `"SL"` matched `"SELL"` and that ML signal comments returned by MT5 on close were the source of the mislabel. This is **wrong**. Verified empirically: `'SL' in 'SELL'` is `False` (the characters are S-E-L-L, no S-immediately-L pair). The actual mechanism is **modified-SL hits**, described below. The original analysis is preserved here for audit-trail purposes — strikethrough indicates the corrected text.
 
-The substring match `"SL" in comment` matches `"SELL"`. When MT5 returns the original signal comment on a close (e.g., trailing-stop or break-even close paths), the comment contains text like `"ML Direct SELL | conf=56.6%"` — uppercase `"SELL"` contains `"SL"` — the trade is labelled `SL_HIT` regardless of how it actually exited.
+**Original (wrong) claim — superseded:**
+
+> ~~`engine/trading_engine.py:1109-1116`:~~
+>
+> ~~```python~~
+> ~~comment = (close_deal.comment or "").upper()~~
+> ~~if "SL" in comment or "STOP LOSS" in comment:~~
+> ~~    exit_reason = "SL_HIT"~~
+> ~~elif "TP" in comment or "TAKE PROFIT" in comment:~~
+> ~~    exit_reason = "TP_HIT"~~
+> ~~else:~~
+> ~~    exit_reason = "MANUAL"~~
+> ~~```~~
+>
+> ~~The substring match `"SL" in comment` matches `"SELL"`. When MT5 returns the original signal comment on a close (e.g., trailing-stop or break-even close paths), the comment contains text like `"ML Direct SELL | conf=56.6%"` — uppercase `"SELL"` contains `"SL"` — the trade is labelled `SL_HIT` regardless of how it actually exited.~~
+
+**Actual mechanism (corrected):**
+
+The substring check works as designed: it catches the `"sl"` token in close comments like `"[sl 4756.64]"` that MT5 returns when an SL price is hit. The problem is upstream: the engine had no way to distinguish between two scenarios that both produce `[sl ...]` close comments:
+
+1. **Original-SL hit** (real adverse stop): price moved against the position by the full planned SL distance and triggered the SL.
+2. **Modified-SL hit** (break-even or trailing stop): the engine's strategy moved the SL from its original adverse price to break-even (≈ entry) or further into profit; price then ticked back to the modified SL and triggered it. The trade closes at a small profit / break-even, not an adverse loss — but MT5 still reports it as `[sl ...]` because the SL price *was* hit (just a different SL than the original one).
+
+The empirical pattern (close ≈ open, pnl ≈ +$2, exit_reason = SL_HIT) is mostly scenario 2: trailing-stop break-even closes that the old engine code labelled identically to scenario 1.
+
+### Evidence gap that motivated Phase A's `close_comment` storage
+
+Yesterday's investigation could not directly verify scenario 2 from the database alone — the engine never persisted the MT5 close-deal comment. Phase A (committed 2026-05-01) adds `trade_results.close_comment` (TEXT, nullable) to capture the raw comment going forward. Future investigations into exit-reason mechanics now have direct evidence rather than inferring from price fields. This is the load-bearing infrastructure addition; the classifier below would have been ad-hoc without it.
 
 ### Impact
 
@@ -62,27 +80,32 @@ The substring match `"SL" in comment` matches `"SELL"`. When MT5 returns the ori
 | Phase 7 meta-labeler training data if it uses `exit_reason` as a label or feature | **CRITICAL** — would learn from corrupted ground truth |
 | Direct $ impact of the mislabels (treated-as-loss but actually small profit) | **+$635.80** total — small, but the *count* corruption is the real damage |
 
-### Proposed fix (do NOT relabel data yet — investigation only)
+### Phase A — code fix (shipped 2026-05-01)
 
-Two-part fix:
+1. **Capture `close_comment`** — store MT5's raw close-deal comment in `trade_results.close_comment`. Closes the evidence gap permanently. Done via plain ALTER TABLE; an Alembic migration will replace this when AI-003 lands.
 
-**A. Code fix (engine):**
-1. Replace the substring check with word-boundary detection AND structural cross-check against price proximity:
-   ```python
-   import re
-   comment = (close_deal.comment or "").lower()
-   sl_match = re.search(r"\b(sl|stop\s*loss)\b", comment)
-   tp_match = re.search(r"\b(tp|take\s*profit)\b", comment)
-   ```
-2. Cross-check: if labelled SL_HIT but `|close_price - stop_loss| / |stop_loss - open_price| > 0.10`, downgrade to `BE_HIT` (break-even) or `TRAILING_STOP` based on whether close is near open (BE) or somewhere between open and TP (trailing).
-3. Add new `exit_reason` enum values: `BE_HIT`, `TRAILING_STOP`. Update downstream filters.
+2. **Price-proximity classifier** at `analysis/exit_classifier.py::classify_exit()`. Refines the MT5 tag using close-to-open distance and direction:
+   - `|close - open| < 0.10 × atr_at_entry` → **BE_HIT** (no meaningful move; SL was at break-even)
+   - close in favorable direction by > threshold → **TRAILING_STOP** (SL was trailed into profit, position closed in green)
+   - close in adverse direction by > threshold → **SL_HIT** (real adverse stop)
+   - `TP_HIT` / `MANUAL` / `UNKNOWN` pass through unchanged
 
-**B. Retroactive relabel plan:**
-1. Add column `exit_reason_v2` to `trade_results` (additive, doesn't disturb existing).
-2. Run a one-off backfill that, for each closed trade, computes `exit_reason_v2` using the new logic plus price-proximity cross-check.
-3. Tag rows where `exit_reason != exit_reason_v2` with `mislabel_flag = True`.
-4. Surface the diff to the dashboard for spot review before any consumer is migrated to `exit_reason_v2`.
-5. Migrate consumers (analyze_all_trades.py, dashboard pages, meta-labeler training) one at a time once spot-checks pass.
+   **Threshold rationale:** 0.10 × ATR scales naturally per symbol. For XAUUSD with ATR ≈ 16 the threshold is ~1.6 points — well above the empirical break-even cohort (close-to-open distance 0.02–0.10) and well below real SL hits (15+ points). For EURUSD with ATR ≈ 0.0012 the threshold is ~0.00012 (~1.2 pips), matching the same proportion. Per-symbol fallback values used if `atr_at_entry` is NULL: 5.0 for XAUUSD, 0.05 for JPY pairs, 0.0005 for other forex.
+
+3. **Engine wiring** at `engine/trading_engine.py::_record_trade_result()`: SignalLog lookup moved up so `atr_at_entry` is available for the classifier; classifier called after MT5-tag determination; `close_comment` written into the new column.
+
+4. **New `exit_reason` enum values** added at the model docstring level (`storage/database.py:131`). Downstream consumers must accept `BE_HIT` and `TRAILING_STOP` in addition to the existing `SL_HIT / TP_HIT / MANUAL / UNKNOWN`. Phase B will introduce `exit_reason_v2` for the retroactive backfill.
+
+5. **Regex word-boundary change considered but rejected.** The original spec proposed `\b(sl|stop\s*loss)\b` to avoid the (claimed) `"SELL"` collision. Once the substring claim was disproved on 2026-05-01, the regex change had no functional value — the substring check wasn't matching what we thought. Defensive value did not justify additional code surface; skipped per project lead instruction (`docs/p.md` 2026-05-01).
+
+### Phase B — retroactive relabel (pending)
+
+Same as before:
+1. Add column `trade_results.exit_reason_v2` (additive, preserves existing `exit_reason`).
+2. Run classifier on all 314 closed trades; write to `exit_reason_v2`.
+3. Tag rows where `exit_reason != exit_reason_v2` with a `mislabel_flag` derived from the comparison.
+4. **Validation gate** before commit: spot-check 10 known-mislabel rows + 10 control rows (true SL hits). 0 false positives required — any true SL hit reclassified as BE/TRAILING blocks the commit until the threshold is adjusted.
+5. Migrate consumers one at a time once spot-checks pass.
 
 **Severity:** BLOCKING for Phase 7 if the meta-labeler will train on `exit_reason`. Promote to **Phase 7 Blocker #1b**.
 

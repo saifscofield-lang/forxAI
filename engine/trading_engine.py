@@ -1097,7 +1097,9 @@ class TradingEngine:
         close_price = None
         close_time = None
         pnl = 0.0
-        exit_reason = "UNKNOWN"
+        close_comment = None       # AI-017b: capture raw close comment for evidence
+        mt5_exit_tag = "UNKNOWN"   # initial classification from MT5 comment
+        exit_reason = "UNKNOWN"    # final, post-classifier
 
         if deals and len(deals) > 1:
             # Last deal is the closing deal
@@ -1105,19 +1107,24 @@ class TradingEngine:
             close_price = close_deal.price
             close_time = datetime.utcfromtimestamp(close_deal.time)
             pnl = close_deal.profit + close_deal.swap + close_deal.commission
+            close_comment = close_deal.comment or ""
 
-            # Determine exit reason from comment
-            comment = (close_deal.comment or "").upper()
-            if "SL" in comment or "STOP LOSS" in comment:
-                exit_reason = "SL_HIT"
-            elif "TP" in comment or "TAKE PROFIT" in comment:
-                exit_reason = "TP_HIT"
+            # Initial MT5 tag from comment substring. Note: the original
+            # substring `"SL" in comment.upper()` does NOT match `"SELL"`
+            # — verified 2026-05-01. The mislabel pattern documented in
+            # AI-017b comes from MT5 correctly tagging modified-SL hits as
+            # `[sl ...]`; refinement happens in classify_exit() below.
+            upper = close_comment.upper()
+            if "SL" in upper or "STOP LOSS" in upper:
+                mt5_exit_tag = "SL_HIT"
+            elif "TP" in upper or "TAKE PROFIT" in upper:
+                mt5_exit_tag = "TP_HIT"
             else:
-                exit_reason = "MANUAL"
+                mt5_exit_tag = "MANUAL"
         else:
             # Fallback: estimate from trade record
             close_time = now
-            exit_reason = "UNKNOWN"
+            mt5_exit_tag = "UNKNOWN"
 
         # IMP-17: Track realized losses for daily limit
         if pnl < 0:
@@ -1163,6 +1170,29 @@ class TradingEngine:
             pnl=pnl,
         )
 
+        # Look up the originating SignalLog for ml_confidence + atr_at_entry +
+        # rsi_at_entry. atr_at_entry feeds the AI-017b exit classifier below,
+        # so this lookup must precede the TradeResult write.
+        signal_log = session.query(SignalLog).filter(
+            SignalLog.ticket == trade.ticket
+        ).first()
+        atr_at_entry = signal_log.atr if signal_log else None
+
+        # Refine the MT5 exit tag using price-proximity (AI-017b). Splits
+        # SL_HIT into BE_HIT / TRAILING_STOP / SL_HIT; TP_HIT and MANUAL
+        # pass through unchanged.
+        from analysis.exit_classifier import classify_exit
+        exit_reason = classify_exit(
+            open_price=trade.open_price,
+            close_price=close_price,
+            stop_loss=trade.stop_loss,
+            take_profit=trade.take_profit,
+            order_type=trade.order_type,
+            atr_at_entry=atr_at_entry,
+            mt5_exit_tag=mt5_exit_tag,
+            symbol=trade.symbol,
+        )
+
         # Write to TradeResult for ML retraining
         result = TradeResult(
             ticket=trade.ticket,
@@ -1175,6 +1205,7 @@ class TradingEngine:
             pnl=pnl,
             pnl_pips=round(pnl_pips, 1),
             exit_reason=exit_reason,
+            close_comment=close_comment,
             profitable=(pnl > 0),
             strategy=trade.strategy,
             volume=trade.volume,
@@ -1187,10 +1218,8 @@ class TradingEngine:
             strategy_version=trade.strategy_version,
         )
 
-        # Try to attach ML confidence, features, and context from SignalLog
-        signal_log = session.query(SignalLog).filter(
-            SignalLog.ticket == trade.ticket
-        ).first()
+        # Attach ML confidence, features, and context from SignalLog (looked
+        # up earlier for the classifier).
         if signal_log:
             result.ml_confidence = signal_log.ml_confidence
             result.features_json = signal_log.features_json
