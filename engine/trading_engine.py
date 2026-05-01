@@ -1153,15 +1153,15 @@ class TradingEngine:
             if sl_dist > 0:
                 rr_planned = round(tp_dist / sl_dist, 2)
 
-        # Calculate actual R:R ratio
-        rr_actual = None
-        if trade.stop_loss and close_price and trade.open_price:
-            sl_dist = abs(trade.open_price - trade.stop_loss)
-            if sl_dist > 0:
-                actual_dist = abs(close_price - trade.open_price)
-                rr_actual = round(actual_dist / sl_dist, 2)
-                if pnl < 0:
-                    rr_actual = -rr_actual
+        # Calculate actual R:R ratio (delegated to analysis/rr_calculator.py
+        # so backfill scripts and the live engine share one definition).
+        from analysis.rr_calculator import realized_rr as _realized_rr
+        rr_actual = _realized_rr(
+            open_price=trade.open_price,
+            close_price=close_price,
+            stop_loss=trade.stop_loss,
+            pnl=pnl,
+        )
 
         # Write to TradeResult for ML retraining
         result = TradeResult(

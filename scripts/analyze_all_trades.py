@@ -247,8 +247,8 @@ def enrich_trades(trades: pd.DataFrame, tr: pd.DataFrame, sigs: pd.DataFrame,
 
     # PnL / outcome
     df["net_pnl"] = df["profit"].fillna(0) + df["swap"].fillna(0) + df["commission"].fillna(0)
-    df["realized_rr"] = np.nan  # will require risk amount per trade; leave for now
     df["was_profitable"] = df["net_pnl"] > 0
+    # realized_rr is filled from trade_results.risk_reward_actual after the merge below
 
     # Conf from comment
     df["ml_confidence_pct"] = df["comment"].apply(parse_conf)
@@ -264,6 +264,13 @@ def enrich_trades(trades: pd.DataFrame, tr: pd.DataFrame, sigs: pd.DataFrame,
                "news_nearby", "news_event_name", "news_impact", "detected_regime"]
     tr_slim = tr[[c for c in tr_cols if c in tr.columns]].drop_duplicates("ticket")
     df = df.merge(tr_slim, on="ticket", how="left")
+
+    # Fill realized_rr from the engine-populated risk_reward_actual (signed:
+    # +R for wins, -R for losses, 0 for closes at entry price).
+    if "risk_reward_actual" in df.columns:
+        df["realized_rr"] = df["risk_reward_actual"]
+    else:
+        df["realized_rr"] = np.nan
 
     # Asof-match signal_logs (by symbol + time ±5 min)
     sigs_slim = sigs[[c for c in ["time", "symbol", "strategy", "status", "reason",
