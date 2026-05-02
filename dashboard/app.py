@@ -24,6 +24,7 @@ import streamlit as st
 from dashboard.utils.layout import (
     IMP_DB, PHASE_8_GATE, PHASE_9_TARGET,
     page_intro, status_header,
+    phase_purpose_ar, phase_display_name,
 )
 
 
@@ -208,7 +209,7 @@ def _all_phases():
     try:
         con = sqlite3.connect(IMP_DB)
         df = pd.read_sql(
-            "SELECT phase_number, name, status, started_at, completed_at "
+            "SELECT phase_number, name, name_ar, status, started_at, completed_at "
             "FROM project_phases WHERE phase_number BETWEEN 6 AND 9 "
             "ORDER BY phase_number",
             con,
@@ -258,17 +259,19 @@ else:
             sub = f"هدف 1 سبتمبر · {d} يوم"
         elif n_total > 0:
             sub = f"{n_done}/{n_total} خطوات"
+        display = phase_display_name(ph["name"], ph.get("name_ar"))
+        purpose = phase_purpose_ar(int(ph["phase_number"]))
         with col:
             st.markdown(
                 f"""
                 <div style="background:#12151C;border:1px solid #2D3748;
                             border-left:4px solid {clr};border-radius:8px;
-                            padding:12px 14px;min-height:110px">
+                            padding:12px 14px;min-height:170px">
                     <div style="font-size:11px;color:#888;font-weight:600">
                         Phase {int(ph['phase_number'])}
                     </div>
-                    <div style="font-size:14px;color:#FFF;font-weight:700;margin:4px 0 8px 0">
-                        {ph['name']}
+                    <div style="font-size:14px;color:#FFF;font-weight:700;margin:4px 0 6px 0">
+                        {display}
                     </div>
                     <div style="font-size:11px;color:{clr};font-weight:700">
                         {ph['status']}
@@ -276,10 +279,74 @@ else:
                     <div style="font-size:11px;color:#AAA;margin-top:4px">
                         {sub}
                     </div>
+                    <div style="font-size:11px;color:#999;margin-top:8px;
+                                line-height:1.5;border-top:1px solid #2D3748;padding-top:6px">
+                        {purpose}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
+# ── All-phases overview (collapsible) ────────────────────────────────────────
+@st.cache_data(ttl=300, show_spinner=False)
+def _all_phases_full():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT phase_number, name, name_ar, status FROM project_phases "
+            "ORDER BY CASE WHEN phase_number = 105 THEN 10.5 "
+            "ELSE phase_number END",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+with st.expander("📋 جميع مراحل المشروع — نظرة شاملة"):
+    st.caption(
+        "خريطة المشروع كاملة. الحالة الفعلية تتغيّر تلقائياً مع تقدّم العمل. "
+        "النص أدناه يشرح غرض كل مرحلة بإيجاز للقارئ غير التقني."
+    )
+    full = _all_phases_full()
+    status_color_full = {
+        "IN_PROGRESS": "#42A5F5", "NOT_STARTED": "#888",
+        "DEFERRED": "#FFCA28", "COMPLETED": "#4CAF50",
+        "PENDING_ACTIVATION": "#9C27B0",
+    }
+    for _, ph in full.iterrows():
+        ph_num = int(ph["phase_number"])
+        # Phase 105 displays as 10.5
+        ph_label = "10.5" if ph_num == 105 else str(ph_num)
+        clr = status_color_full.get(ph["status"], "#888")
+        display_name = phase_display_name(ph["name"], ph.get("name_ar"))
+        purpose = phase_purpose_ar(ph_num)
+        st.markdown(
+            f"""
+            <div style="background:#12151C;border-left:3px solid {clr};
+                        border-radius:6px;padding:8px 14px;margin-bottom:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span style="font-size:11px;color:#888;font-weight:600">
+                            Phase {ph_label}
+                        </span>
+                        <span style="font-size:13px;color:#FFF;font-weight:700;margin-right:8px">
+                            {display_name}
+                        </span>
+                    </div>
+                    <span style="font-size:11px;color:{clr};font-weight:700">
+                        {ph['status']}
+                    </span>
+                </div>
+                <div style="font-size:11px;color:#AAA;margin-top:4px;line-height:1.5">
+                    {purpose if purpose else '—'}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 st.divider()
 

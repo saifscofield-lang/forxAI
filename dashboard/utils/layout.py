@@ -20,6 +20,41 @@ PAPER_LOG = "data/logs/paper_trading.log"
 PHASE_8_GATE = date(2026, 6, 1)
 PHASE_9_TARGET = date(2026, 9, 1)
 
+# Short Arabic purpose for each phase — what this phase tries to accomplish.
+# Used by the dashboard's phase cards. project_phases.name_ar already holds
+# the Arabic title; this dict adds a one-line explanation for non-technical
+# reading. Keep each value short (one line) — long context stays in notes.
+PHASE_PURPOSES_AR = {
+    0: "تأسيس البنية التحتية الأساسية — مؤشرات، استراتيجيات، إدارة مخاطر، محرّك تنفيذ",
+    1: "أول إصدار قابل للتشغيل لجمع بيانات حقيقية وتثبيت الواجهة الأساسية",
+    2: "(مهجورة) — حلّت محلها مراحل v3.0 منذ 17 أبريل 2026",
+    3: "(مهجورة) — حلّت محلها مراحل v3.0 منذ 17 أبريل 2026",
+    4: "(مهجورة) — حلّت محلها مراحل v3.0 منذ 17 أبريل 2026",
+    5: "تحضير البيانات + اختيار الميزات + بناء أوّلي قبل بناء v3.0 الكامل",
+    6: "بناء استراتيجية زخم اتجاه السلسلة الزمنية (TSMOM) كطبقة مستقلة موازية",
+    7: "بناء فلتر تعلّم آلي (Meta-Labeler) يحدّد جودة الإشارات قبل تنفيذها",
+    8: "تشغيل النظام الكامل على حساب تجريبي مدّة 6 أسابيع لإثبات الجدوى قبل الحقيقي",
+    9: "إطلاق رأس مال صغير حقيقي ($2,000) + معالجة فجوات الانزلاق والعمولة والأخبار",
+    10: "اختبار TSMOM على العملات الرقمية (BTC/ETH/BNB/SOL) — رُفِض في 22 أبريل (نتيجة سلبية)",
+    11: "إضافة 4-5 استراتيجيات متعددة الأصول غير مرتبطة: crypto، commodity، VIX",
+    12: "الانتقال من MT5 إلى بنية متعددة الأصول: IBKR + ccxt + TimescaleDB + Grafana",
+    13: "اختبار v4 ورقياً ≥ 90 يوماً مع walk-forward + Purged CV لكل استراتيجية",
+    14: "إطلاق v4 على حساب حقيقي ($5-10K)، توسيع تدريجي مع تأكيد Sharpe",
+    105: "محاولة إنقاذ Phase 10 بإضافة فلتر نظام (regime filter) — لم تنجح، أُغلقت",
+}
+
+
+def phase_purpose_ar(phase_number: int) -> str:
+    """Return the short Arabic purpose for a phase. Empty string if not known."""
+    return PHASE_PURPOSES_AR.get(int(phase_number), "")
+
+
+def phase_display_name(name: str, name_ar: str | None) -> str:
+    """Prefer the Arabic name when populated; fall back to English."""
+    if name_ar and name_ar.strip() and not name_ar.strip().startswith("Phase "):
+        return name_ar
+    return name
+
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _engine_state_from_log() -> dict:
