@@ -8,7 +8,11 @@ system:
   version: "0.3.0"
   mode: "paper"
 
-# --- الأدوات المالية (7 أزواج) ---
+# --- الأدوات المالية (6 أزواج) ---
+# USDCAD removed 2026-05-02 per AI-020 / decision_log.md 2026-05-01:
+# 0 PASS verdicts across 40 backtest runs; v3 live -$544 net on 11 trades.
+# Re-evaluate inclusion only if a fundamentally different strategy class
+# is added later. See docs/research/phase7_blocker_2_audusd_usdcad_rr_analysis.md.
 instruments:
   - symbol: "EURUSD"
     digits: 5
@@ -23,9 +27,6 @@ instruments:
     digits: 2
     pip_value: 0.01
   - symbol: "AUDUSD"
-    digits: 5
-    pip_value: 0.0001
-  - symbol: "USDCAD"
     digits: 5
     pip_value: 0.0001
   - symbol: "USDCHF"

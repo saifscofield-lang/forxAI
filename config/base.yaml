@@ -7,7 +7,10 @@ system:
   version: "0.3.0"
   mode: "paper"              # paper | live
 
-# --- الأدوات المالية (8 أزواج) ---
+# --- الأدوات المالية (6 أزواج) ---
+# USDCAD removed 2026-05-02 per AI-020 / decision_log.md 2026-05-01:
+# 0 PASS verdicts across 40 backtest runs; v3 live -$544 net on 11 trades.
+# NZDUSD removed earlier (IMP-48): 29% WR, -$3,336 loss across all strategies.
 instruments:
   - symbol: "EURUSD"
     digits: 5
@@ -24,10 +27,6 @@ instruments:
   - symbol: "AUDUSD"
     digits: 5
     pip_value: 0.0001
-  - symbol: "USDCAD"
-    digits: 5
-    pip_value: 0.0001
-  # NZDUSD removed (IMP-48): 29% WR, -$3,336 loss across all strategies
   - symbol: "USDCHF"
     digits: 5
     pip_value: 0.0001
