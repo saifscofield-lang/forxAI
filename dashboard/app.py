@@ -531,14 +531,37 @@ def _engine_health():
             tail = f.read().decode("utf-8", errors="ignore")
         cfg_lines = [ln for ln in tail.splitlines() if "[CONFIG]" in ln]
         info["last_config"] = cfg_lines[-1] if cfg_lines else None
+        # AI-004b: parse the most recent [CONFIG PARITY] / [CONFIG ALL] /
+        # [CONFIG PARITY MISMATCH] line so the dashboard surfaces parity
+        # status without re-reading the yaml files itself.
+        parity_lines = [
+            ln for ln in tail.splitlines()
+            if "[CONFIG PARITY" in ln or "[CONFIG ALL]" in ln
+        ]
+        info["last_parity"] = parity_lines[-1] if parity_lines else None
+        # Short status verdict for the tile
+        if info["last_parity"] is None:
+            info["parity_verdict"] = "—"  # AI-004b not active yet
+        elif "MISMATCH" in info["last_parity"]:
+            info["parity_verdict"] = "mismatch"
+        elif "[CONFIG PARITY]" in info["last_parity"] and "matches between" in info["last_parity"]:
+            info["parity_verdict"] = "match"
+        elif "loaded config is base.yaml" in info["last_parity"]:
+            info["parity_verdict"] = "self"
+        elif "base.yaml unreadable" in info["last_parity"]:
+            info["parity_verdict"] = "unavailable"
+        else:
+            info["parity_verdict"] = "unknown"
     except Exception:
         info["last_config"] = None
+        info["last_parity"] = None
+        info["parity_verdict"] = "—"
     return info
 
 
 st.markdown("### ⚙️ صحة المحرّك")
 h = _engine_health()
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     if h["mt5_connected"]:
         st.metric("MT5", "متصل", delta_color="off")
@@ -559,6 +582,44 @@ with c4:
         st.metric("آخر [CONFIG]", cfg[:19])
     else:
         st.metric("آخر [CONFIG]", "—")
+with c5:
+    # AI-004b: cross-config blacklist parity status.
+    verdict = h.get("parity_verdict", "—")
+    label = {
+        "match": "متطابق ✓",
+        "mismatch": "تعارض ✗",
+        "self": "—",
+        "unavailable": "غير متاح",
+        "unknown": "غير معروف",
+        "—": "—",
+    }.get(verdict, "—")
+    delta = {
+        "match": "configs in sync",
+        "mismatch": "FIX REQUIRED",
+        "self": "loaded base.yaml",
+        "unavailable": "base.yaml unreadable",
+    }.get(verdict)
+    delta_color = {
+        "match": "off", "mismatch": "inverse",
+        "self": "off", "unavailable": "off",
+    }.get(verdict, "off")
+    st.metric(
+        "تطابق الإعدادات",
+        label,
+        delta=delta,
+        delta_color=delta_color,
+        help=(
+            "AI-004b: يقارن قائمة الحظر strategy_blacklist بين paper.yaml و base.yaml "
+            "للكشف عن التحرير الذي يهبط في ملف ولا يصل المحرّك (مثل حادثة Apr-10). "
+            "يتم تحديثها تلقائياً مع كل سطر [CONFIG PARITY] في السجل."
+        ),
+    )
 
 if h.get("last_config"):
     st.caption(f"`{h['last_config'][:200]}`")
+if h.get("last_parity"):
+    st.caption(f"`{h['last_parity'][:200]}`")
+elif h.get("last_config"):
+    st.caption(
+        "ℹ️ AI-004b dormant — سيظهر [CONFIG PARITY] بعد إعادة تشغيل المحرّك."
+    )
