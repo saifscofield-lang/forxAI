@@ -91,20 +91,91 @@ class TradingEngine:
 
     # ─────────────────────────────────────────────────────────────────
     # AI-004: Config snapshot + drift detection
+    # AI-004b extension: hash all sibling configs + cross-config blacklist
+    #                   parity check. Catches the Apr-10 base.yaml-only
+    #                   class of bug where a critical edit lands in one
+    #                   file but the engine reads a different one.
     # ─────────────────────────────────────────────────────────────────
-    def _compute_config_snapshot(self) -> dict:
-        """Hash the loaded config + summarize key counts. Used at startup
-        and periodically to detect on-disk-vs-in-memory config drift."""
+
+    # The set of config files watched for drift. base.yaml is the canonical
+    # template; paper.yaml / live.yaml are mode-specific copies. AI-004b
+    # requires that strategy_blacklist stays in sync between base.yaml and
+    # whichever mode-specific file is loaded.
+    _CONFIG_FILES_TO_HASH = ("config/base.yaml", "config/paper.yaml", "config/live.yaml")
+
+    @staticmethod
+    def _hash_file(path: str):
+        """SHA256[:16] of file bytes, or None if file missing / unreadable."""
         import hashlib
         from pathlib import Path
         try:
-            on_disk_bytes = Path(self._config_path).read_bytes()
-            on_disk_hash = hashlib.sha256(on_disk_bytes).hexdigest()[:16]
-        except Exception as e:
-            on_disk_hash = f"<read-error: {e}>"
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
+        except Exception:
+            return None
+
+    @staticmethod
+    def _load_blacklist_keys(path: str):
+        """Return a frozenset of (strategy, symbol) tuples from a config file's
+        strategy_blacklist, or None if the file can't be read/parsed.
+
+        The set captures identity, not the human-readable reason text. Parity
+        is defined as "same set of (strategy, symbol) pairs"; reason fields
+        may legitimately differ between files."""
+        import yaml as _yaml
+        from pathlib import Path
+        try:
+            data = _yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+            bl = data.get("strategy_blacklist") or []
+            return frozenset(
+                (str(x.get("strategy", "")), str(x.get("symbol", "")))
+                for x in bl
+            )
+        except Exception:
+            return None
+
+    def _compute_blacklist_parity(self) -> dict:
+        """Compare the loaded config's blacklist against base.yaml's blacklist.
+
+        AI-004b core check. The Apr-10 bug shipped because the engine reads
+        paper.yaml but the operator edited base.yaml; the two diverged
+        silently for 18 days. This function detects that class of drift at
+        startup AND on every drift check.
+
+        Returns a dict with:
+            status: "match" | "mismatch" | "self" | "unavailable"
+            only_in_loaded, only_in_base: lists for diagnostic logging
+        """
+        loaded_keys = frozenset(
+            (str(x.get("strategy", "")), str(x.get("symbol", "")))
+            for x in (self.config.get("strategy_blacklist") or [])
+        )
+        # If the engine loaded base.yaml itself, parity check is trivial
+        if self._config_path.endswith("base.yaml"):
+            return {"status": "self", "only_in_loaded": [], "only_in_base": []}
+        base_keys = self._load_blacklist_keys("config/base.yaml")
+        if base_keys is None:
+            return {"status": "unavailable", "only_in_loaded": [], "only_in_base": []}
+        if loaded_keys == base_keys:
+            return {"status": "match", "only_in_loaded": [], "only_in_base": []}
+        return {
+            "status": "mismatch",
+            "only_in_loaded": sorted(loaded_keys - base_keys),
+            "only_in_base": sorted(base_keys - loaded_keys),
+        }
+
+    def _compute_config_snapshot(self) -> dict:
+        """Hash the loaded config + all sibling configs + summarize key counts.
+
+        Used at startup and periodically to detect on-disk-vs-in-memory
+        drift on the loaded file (original AI-004) AND cross-file drift
+        between base.yaml and the active mode-specific config (AI-004b)."""
+        loaded_hash = self._hash_file(self._config_path) or "<read-error>"
+        all_hashes = {p: self._hash_file(p) for p in self._CONFIG_FILES_TO_HASH}
         return {
             "config_path": self._config_path,
-            "on_disk_hash": on_disk_hash,
+            "on_disk_hash": loaded_hash,
+            "all_hashes": all_hashes,            # AI-004b
+            "blacklist_parity": self._compute_blacklist_parity(),  # AI-004b
             "n_instruments": len(self.config.get("instruments", [])),
             "n_blacklist_entries": len(self.config.get("strategy_blacklist", [])),
             "blacklist_keys": [
@@ -117,8 +188,11 @@ class TradingEngine:
         }
 
     def _log_config_snapshot(self) -> None:
-        """Log the loaded config fingerprint at startup."""
+        """Log the loaded config fingerprint at startup, plus AI-004b extras."""
         snap = self._config_snapshot
+        # Original [CONFIG] line — preserved verbatim so existing dashboard /
+        # log-tailing consumers (e.g. status_header, paper_trading.log
+        # parsers) keep working unchanged.
         logger.info(
             f"[CONFIG] loaded {snap['config_path']} "
             f"(sha256: {snap['on_disk_hash']}) | "
@@ -130,44 +204,117 @@ class TradingEngine:
             f"risk_per_trade: {snap['max_risk_per_trade']}"
         )
 
+        # AI-004b — log all watched files' fingerprints in one line.
+        all_h = snap["all_hashes"]
+        files_str = " · ".join(
+            f"{p}: {h or 'missing'}" for p, h in all_h.items()
+        )
+        logger.info(f"[CONFIG ALL] {files_str}")
+
+        # AI-004b — blacklist parity status.
+        parity = snap["blacklist_parity"]
+        if parity["status"] == "match":
+            logger.info(
+                f"[CONFIG PARITY] strategy_blacklist matches between "
+                f"{snap['config_path']} and base.yaml"
+            )
+        elif parity["status"] == "self":
+            logger.info(
+                "[CONFIG PARITY] loaded config is base.yaml — parity check N/A"
+            )
+        elif parity["status"] == "unavailable":
+            logger.warning(
+                "[CONFIG PARITY] base.yaml unreadable — cannot verify blacklist parity"
+            )
+        else:  # mismatch
+            self._log_parity_mismatch(parity)
+
+    def _log_parity_mismatch(self, parity: dict) -> None:
+        """Format and log a strategy_blacklist parity mismatch.
+
+        Same alert path the Apr-10 bug would have triggered if AI-004b had
+        existed at the time."""
+        only_loaded = parity.get("only_in_loaded") or []
+        only_base = parity.get("only_in_base") or []
+        loaded_str = ", ".join(f"{s}:{y}" for s, y in only_loaded) or "none"
+        base_str = ", ".join(f"{s}:{y}" for s, y in only_base) or "none"
+        logger.warning(
+            f"[CONFIG PARITY MISMATCH] strategy_blacklist diverges between "
+            f"{self._config_path} and base.yaml. "
+            f"Only in loaded: [{loaded_str}]. Only in base.yaml: [{base_str}]. "
+            "This is the AI-019 / Apr-10 class of bug: an edit landed in one "
+            "file but the engine reads the other. Sync the two configs and restart."
+        )
+        try:
+            self.notifier.send(
+                f"⚠️ <b>Config blacklist parity mismatch</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📁 loaded: <code>{self._config_path}</code>\n"
+                f"➕ only in loaded: <code>{loaded_str}</code>\n"
+                f"➕ only in base.yaml: <code>{base_str}</code>\n"
+                f"⚡ sync configs and restart engine"
+            )
+        except Exception:
+            pass
+
     def _check_config_drift(self) -> None:
-        """Re-hash on-disk config and compare to startup snapshot.
+        """Re-hash watched config files and compare to startup snapshot.
 
         Engine uses an in-memory copy loaded once at __init__. If someone
-        edits paper.yaml without restarting, the on-disk file diverges from
-        what the engine is actually using. This catches that within one
-        scan cycle and logs a clear warning.
+        edits any config file (loaded one OR a sibling) without restarting,
+        the on-disk content diverges from the in-memory state. This catches
+        that within ~6 scan cycles and logs a clear warning.
 
-        Same root-cause class as the 6-day shadow incident: silent state
-        drift between code/config that the engine *thinks* it has and the
-        file on disk.
+        AI-004b extension: also re-checks blacklist parity each cycle so a
+        mid-run divergence (operator edits base.yaml only, mid-week) is
+        surfaced even if the loaded file's hash is unchanged.
         """
-        import hashlib
-        from pathlib import Path
-        try:
-            on_disk_bytes = Path(self._config_path).read_bytes()
-            on_disk_hash = hashlib.sha256(on_disk_bytes).hexdigest()[:16]
-        except Exception as e:
-            logger.warning(f"[CONFIG DRIFT CHECK] cannot read config file: {e}")
-            return
-        startup_hash = self._config_snapshot["on_disk_hash"]
-        if on_disk_hash != startup_hash:
-            logger.warning(
-                f"[CONFIG DRIFT] {self._config_path} changed since engine startup. "
-                f"on-disk hash: {on_disk_hash}, in-memory hash: {startup_hash}. "
-                f"Engine is still running with the OLD config; restart to apply changes."
-            )
-            try:
-                self.notifier.send(
-                    f"⚠️ <b>Config drift detected</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"📁 <code>{self._config_path}</code>\n"
-                    f"🔑 disk: <code>{on_disk_hash}</code>\n"
-                    f"🔑 engine: <code>{startup_hash}</code>\n"
-                    f"⚡ restart engine to apply"
+        # Per-file hash drift
+        startup_hashes = self._config_snapshot.get("all_hashes") or {}
+        for path in self._CONFIG_FILES_TO_HASH:
+            current = self._hash_file(path)
+            startup = startup_hashes.get(path)
+            if current is None and startup is None:
+                continue  # file was missing at startup AND now — no drift
+            if current != startup:
+                is_loaded = (path == self._config_path)
+                tag = "[CONFIG DRIFT]" if is_loaded else "[CONFIG SIBLING DRIFT]"
+                logger.warning(
+                    f"{tag} {path} changed since engine startup. "
+                    f"on-disk hash: {current or 'missing'}, "
+                    f"snapshot hash: {startup or 'missing'}. "
+                    + (
+                        "Engine is still running with the OLD config of this file; "
+                        "restart to apply changes."
+                        if is_loaded else
+                        "This file is not the loaded config but is monitored for "
+                        "cross-file divergence. The engine still reads "
+                        f"{self._config_path}, so behaviour is unaffected — but if "
+                        "the edit was meant to change blacklist / risk settings, "
+                        "verify it was applied to the correct file."
+                    )
                 )
-            except Exception:
-                pass
+                try:
+                    self.notifier.send(
+                        f"⚠️ <b>Config drift detected</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"📁 <code>{path}</code>"
+                        + (" (loaded)" if is_loaded else " (sibling)") + "\n"
+                        f"🔑 disk: <code>{current or 'missing'}</code>\n"
+                        f"🔑 startup: <code>{startup or 'missing'}</code>\n"
+                        + ("⚡ restart engine to apply" if is_loaded
+                           else "ℹ️ engine unaffected — verify edit hit correct file")
+                    )
+                except Exception:
+                    pass
+
+        # Re-check blacklist parity. A sibling-file drift on base.yaml may
+        # have changed parity even if the loaded file is unchanged.
+        current_parity = self._compute_blacklist_parity()
+        startup_parity = (self._config_snapshot.get("blacklist_parity") or {}).get("status")
+        if current_parity["status"] == "mismatch" and startup_parity != "mismatch":
+            # Newly mismatched — alert (mid-run divergence)
+            self._log_parity_mismatch(current_parity)
 
     def set_news_filter(self, news_filter):
         """Set news filter for blocking trades during high-impact events."""
