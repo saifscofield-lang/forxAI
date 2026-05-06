@@ -1,65 +1,100 @@
 # May 4 Kickoff — Readiness 1-pager
 
-**Date prepared:** 2026-05-01 · **Meeting:** Phase 7 kickoff, 2026-05-04 · **Author:** automated session report (Claude Code)
+**Originally prepared:** 2026-05-01 (pre-kickoff)
+**Last updated:** 2026-05-06 (post-kickoff aftermath, end-of-session refresh)
+**Author:** automated session report (Claude Code)
 
-## Today's deliverables (commits `7384629` → `80f734e`)
+This doc started as the pre-kickoff briefing and is now the rolling
+project-state snapshot. The decisions table has shifted to a
+status-tracker as items resolve. The "data quality observations"
+section keeps growing as findings emerge.
 
-- **`Phase 1`** — realized_rr instrumentation. CSV exporter fix; calculator factored to `analysis/rr_calculator.py`; dual-gate PF helpers; 13 unit tests; ship-gate definition (`docs/research/phase7_ship_gate_definition.md`).
-- **`Phase 1 narrative`** — `docs/research/ai017_supplemental_findings_2026_05_01.md`. Three findings: (1) yesterday's "realized_rr is NaN" was wrong, (2) **AI-017b** SL_HIT mislabel (27% v3 / 50% ml_direct), (3) **AI-019** Apr-10 blacklist was no-op for 18 days.
-- **`Phase 2`** — AUDUSD/USDCAD R:R analysis + AI-004 backward audit. Path B confirmed; **USDCAD dropped** from live trading; AI-004b raised. Doc: `docs/research/phase7_blocker_2_audusd_usdcad_rr_analysis.md`. Decision logged: `decision_log.md` 2026-05-01 entry.
-- **`Phase 3`** — meta-labeler training-set proposal. α/β/γ with AI-017b interaction column. Doc: `docs/research/phase7_training_set_proposal.md`.
-- **`Tracker`** — `data/improvements.db` updated. Five action items added or modified.
-- **`Backup`** — `data/trading.db.bak.pre-phase7-prep.20260501T095425Z` (151 MB; gitignored).
+## Status as of 2026-05-06
 
-## Six decisions inheriting to this meeting
+### Phase 7 plan progress
 
-| # | Decision | Default if not chosen | Owner |
-|---|---|---|---|
-| 1 | **Path B optimiser scope** — AUDUSD only? Or all 6 remaining symbols? | AUDUSD only; others in separate audit | strategy |
-| 2 | **Training corpus α / β / γ** | β with cap=20, stratified-by-outcome — most balanced | strategy |
-| 3 | **β cap value** (only if β chosen) | 20 (n=102) | strategy |
-| 4 | **AI-017b sequencing** — fix before May 18 (Step 6) so α/β can use `exit_reason`, or exclude that feature class? | **STATUS 2026-05-01: BOTH PHASES SHIPPED.** Phase A (classifier + `close_comment` capture) and Phase B (`exit_reason_v2` column + 319-trade backfill) both committed. 137 of 247 SL_HIT labels reclassified (55%): 96 → TRAILING_STOP, 41 → BE_HIT. 0 false positives in control gate. α/β/γ training corpus can use `exit_reason_v2` directly as feature/label. Decision #4 reduces to "α / β / γ" without the contamination caveat. | done |
-| 5 | **MACD/RSI training backfill source** — v1/v2 trades, `signal_logs` replay, or reorder Phase 7 plan? | `signal_logs` replay (cleanest; same engine bias) | engineering |
-| 6 | **AI-004b spec confirmation** — multi-file hash + cross-config consistency check on `strategy_blacklist`? | Per spec at end of `phase7_blocker_2_*.md`; ship before Jun 1 | engineering |
+| Step | Window | Status |
+|---|---|---|
+| 1 — `triple_barrier.py` | May 4–10 | ✓ DONE 2026-05-06 |
+| 2 — `purged_cv.py` | May 4–10 | ✓ DONE 2026-05-06 |
+| 3 — Archive retired strategies | May 4–10 | ✓ DONE 2026-04-30 |
+| 4 — Feature importance run | May 11–17 | ✓ DONE 2026-05-06 (5 days early) |
+| 5 — `feature_selector.py` | May 11–17 | ✓ DONE 2026-05-06 (5 days early) |
+| 6 — Meta-labeler train MACD | May 18–24 | PENDING — needs α/β/γ + MACD backfill source |
+| 7 — Meta-labeler train RSI | May 18–24 | PENDING — same |
+| 8 — Refactor ml_filtered + engine | May 25–31 | PENDING — depends on Step 6 design |
+| 9 — `kelly_sizer.py` | May 25–31 | ✓ DONE 2026-05-06 (19 days early) |
+| 10 — Full backtest 3yr + concentration | Jun 1–7 | PENDING — depends on Steps 6–8 |
+| 11 — Ship gate (F1 ≥ 0.55, PF ≥ 1.3 OOS) | Jun 8 | PENDING |
 
-## Open BLOCKING items by phase
+**6 of 11 Phase 7 steps DONE.** All library code (Steps 1, 2, 5, 9) is complete. Step 4 (importance run) used the libraries on real data and produced the curated top-20 feature list.
+
+### Phase 6 plan progress
+
+| Step | Window | Status |
+|---|---|---|
+| 1 — `tsmom_strategy.py` | May 4–10 | ✓ DONE 2026-05-06 |
+| 2 — 10-year backtest, Sharpe ≥ 0.5 | May 11–17 | PENDING |
+| 3 — Begin paper trading TSMOM | May 18–24 | PENDING |
+| 4 — First-month vol-target validation | May 25–31 | PENDING |
+| 5 — Continue parallel with meta-labeler | Jun 1–30 | PENDING |
+
+### BLOCKING items
 
 | Phase | n | Items |
 |---|---:|---|
-| **Phase 7** (May 4 → Jun 8) | 2 | `AI-017b` SL_HIT mislabel · `AI-020` USDCAD removal (yaml edits pending engine restart) |
-| Plus 1 IN_PROGRESS | 1 | `AI-017` R:R pathology audit (today's Phase 1 + Phase 2 work continues to close it) |
-| **Phase 8** (Jun 1 → Jul 20) | 5 | `AI-001` XAUUSD BUY · `AI-003` Alembic migrations · `AI-004b` cross-config drift · `AI-005` 30% holdout OOS · `GAP-OPS-01` Telegram-independent control |
-| **Phase 9** (Sep 1 live) | 5 | `GAP-FID-01..05` slippage / commission / news filter / swap / 2k-lot validation |
+| **Phase 7** (May 4 → Jun 8) | 1 | `AI-017` IN_PROGRESS (parent audit; project-management close call) |
+| **Phase 8** (Jun 1 → Jul 20) | 2 | `AI-001` IN_PROGRESS (Path B/D decision needed); `GAP-OPS-01` deferred (internet stability) |
+| **Phase 9** (Sep 1 live) | 5 | `GAP-FID-01..05` slippage / commission / news filter / swap / 2k-lot |
 
-`AI-019` (DOCS, no phase): premise re-examination of past ml_direct/XAUUSD decisions. Kickoff agenda item — 5 min.
+**Phase 8 BLOCKING dropped 5 → 2 since 2026-05-01** as today's session shipped AI-003 (schema-drift CI guard), AI-004b (cross-config divergence detection), AI-005 (30% holdout validation), and AI-019 (premise re-examination). Closing rate has front-loaded the technical-debt items; what's left are the project-strategy items that need your input.
 
-## Engine restart decision queue
+### Decisions table (status-tracker)
 
-Restart still **deferred**. End-of-session restart preferred so the project lead can review the full diff (4 commits today) in one read. When the restart happens, these effects activate:
+| # | Decision | Status / Default |
+|---|---|---|
+| 1 | **Path B optimiser scope** — AUDUSD only? Or all 6? | **PENDING.** Default: AUDUSD only (others in separate audit). |
+| 2 | **Training corpus α / β / γ** | **PENDING.** Default: β cap=20 stratified-by-outcome. **2026-05-06 update:** AI-019 re-analysis (today) makes γ more defensible than originally framed because γ sidesteps the thought-blocked cohort by construction. Worth revisiting at next opportunity. |
+| 3 | **β cap value** (only if β chosen) | PENDING — default 20 (n=102) |
+| 4 | **AI-017b sequencing** | **DONE 2026-05-01.** Phase A + B both shipped. `exit_reason_v2` is clean ground truth on 319 trades. |
+| 5 | **MACD/RSI training backfill source** | PENDING. Default: `signal_logs` replay |
+| 6 | **AI-004b spec confirmation** | **DONE 2026-05-03.** Cross-config drift detection shipped + activated post engine restart. |
+| 7 *(new)* | **AI-001 fix path** — Path B (regime-stratified retraining) vs Path D (Phase 7 meta-labeler replaces ml_direct) | **PENDING.** Today's Path A retrain attempt failed empirically. Diagnostic + report at `docs/research/ai001_zero_buy_root_cause.md` and `ai001_retrain_balanced_report.md`. |
 
-1. `engine/trading_engine.py` switches to the factored `analysis.rr_calculator.realized_rr` import path. Behaviour-preserving — same formula, same outputs.
-2. Once restart is approved, the AI-020 yaml edits (remove USDCAD from `paper.yaml::instruments` and `base.yaml::instruments`) can ship. **Do not edit yaml without restart in the same window** — otherwise on-disk drift between memory and file violates the operational invariant AI-004 was meant to detect.
-3. `[CONFIG]` log line at startup will then show 6 instruments (was 7) and the existing blacklist (2 entries: ml_direct/XAUUSD, ml_filtered_sma/XAUUSD).
+### Engine restart decision queue
 
-## Data quality observations for the kickoff
+**No restart pending.** Both 2026-05-02 (AI-020 + AI-017b activation) and 2026-05-03 (AI-004b activation) restarts completed cleanly. New `[CONFIG]` lines verified live for each. All three configs (`base.yaml`, `paper.yaml`, `live.yaml`) in sync.
 
-Items the kickoff inherits as background — not decisions, but context for the discussion:
+The `XAUUSD_model_balanced.pkl` file from today's failed Path A retraining sits alongside the deployed model but is **not loaded** by the engine — `strategies/ml_direct_strategy.py:49` still resolves to `XAUUSD_model.pkl`. Switching requires explicit file rename or loader-path config change; not done because Path A failed empirically.
 
-1. **TRAILING_STOP is a major v3 exit category, not a niche** (~30% of closed trades, n=96). Up to 2026-05-01 these were tagged `SL_HIT` and counted as adverse losses; AI-017b Phase B reclassified them. Strategies that produce many trailing-stop closes have very different risk dynamics than strategies that produce real SL hits. Worth checking strategy-retention criteria don't penalise them as if they were losses.
+## Data quality observations (running list)
 
-2. **AI-017b reclassification ground-truth quality is *strengthening*, not weakening, going into Phase 7.** Today's Phase B classifier uses price-based inference. The new `close_comment` column from Phase A starts capturing direct MT5 evidence for every future close. AI-021 (prospective `sl_modifications` log, deferred to Phase 8) will close the remaining inference gap. The inferred classification today is sound (verified at the gate); the direct evidence accumulates over time.
+1. **TRAILING_STOP is a major v3 exit category, not a niche** (~30% of closed trades, n=96 of 319). Strategies producing many trailing-stop closes have very different risk dynamics than strategies producing real SL hits. Strategy-retention criteria should not penalise trailing-stop closes as if they were losses.
 
-3. **`trades.stop_loss` is frozen at order placement** (the engine modifies SL via `mt5.position_modify` but never writes back to the DB). This is the SL persistence opacity that AI-021 will close prospectively. Any analysis that reads `trades.stop_loss` as "the SL the trade actually closed against" will be wrong by some unknown amount; use `signal_logs.stop_loss` (original) + `exit_reason_v2` (classifier verdict) instead.
+2. **AI-017b reclassification ground-truth quality is *strengthening over time*.** Today's Phase B classifier uses price-based inference. The `close_comment` column from Phase A captures direct MT5 evidence for every future close. AI-021 (prospective `sl_modifications` log, deferred to Phase 8) closes the remaining inference gap.
 
-## What I read into the meeting
+3. **`trades.stop_loss` is frozen at order placement** (engine modifies SL via `mt5.position_modify` but never writes back to the DB). Any analysis reading `trades.stop_loss` as "the SL the trade actually closed against" is wrong by an unknown amount. Use `signal_logs.stop_loss` (original) + `exit_reason_v2` (classifier verdict) instead.
 
-The session shifted yesterday's "Phase 7 has 3 blockers" picture to "Phase 7 is mostly already-cleared, but two structural data-quality issues (AI-017b and AI-019) plus one infrastructure gap (AI-004b) materially change the May 4 → Jun 8 risk profile". The AI-017b classifier shipped 2026-05-01 — that issue is now closed and `exit_reason_v2` is clean ground truth. The training-corpus choice (α/β/γ) is now the single decision with the largest downstream impact — it determines whether the meta-labeler trains on the full v3 corpus, a stratified-cap subset, or a retired-strategies-only sample. With contamination resolved, the α/β/γ trade-off is now genuinely about data volume vs corpus representativeness.
+4. **AI-001: `ml_direct/XAUUSD` model is structurally SELL-biased.** Across 94 trades the model has produced 0 BUY predictions because P(BUY) never crosses 40% on real bars (max 37.3%, mean 32.4%). The bias is regime-induced from training-window unidirectionality, not class-imbalance — training data favoured BUY (5,311 vs 4,632 SELL) but the model collapsed onto SELL. **Path A (`class_weight='balanced'`) was tried today and failed empirically** — it just over-collapsed onto SELL further. Path B (regime-stratified retraining) or Path D (meta-labeler replacement) is required.
+
+5. **AI-019: the +$2,283 v3 ledger is entirely propped up by 70 trades opened during a window the engine wasn't supposed to be operating.** Excluding the thought-blocked cohort, v3 is **−$27,311 across 107 trades**. Every meaningfully-sampled strategy is net-negative. The dual-gate verdict shifts from "marginal fail" (R-PF 0.916, $-PF 1.035) to "decisive fail" (R-PF 0.429, $-PF 0.280). Implications: Vote 6D blacklist STRONGER (not weaker); Phase 8 deferral STRONGER; AI-001 urgency UP; γ corpus more defensible than originally framed.
+
+6. **Phase 7 Step 4 finding: features are heavily redundant.** PCA shows only 23 of 82 features carry 95% variance. The top-20 list contains 8 SMA-derived features (substitution-effect candidates) and 0 RSI features. Worth flagging when designing the meta-labeler — manually injecting RSI may be appropriate.
+
+## What I read into the project state
+
+The week May 1 → 6 cleared 6 of 11 Phase 7 plan steps and 4 Phase 8 BLOCKING items, leaving the project genuinely well-shaped going into the May 18 meta-labeler training window. The remaining work splits into two camps:
+
+- **Things that need your input** — α/β/γ corpus choice (with γ now more defensible after AI-019), Path B vs D for AI-001, MACD/RSI backfill source. None of these can be done unilaterally.
+- **Things blocked on external state** — GAP-OPS-01 (stable internet for Telegram-independent control testing), Phase 9 GAP-FID items (need live broker for slippage/commission validation).
+
+The AI-019 re-analysis is the single most strategically-important finding from this week. It changes the framing from "v3 has a small edge we need to protect" to "v3 has no demonstrated edge yet, and the work to find one is exactly what Phase 7 is for". Vote 2's deferral, Vote 6D's blacklist, and AI-001's urgency all line up under this corrected narrative.
 
 ---
 
 ### Pointers
 
-- All today's research: `docs/research/phase7_*.md` and `docs/research/ai017_supplemental_findings_2026_05_01.md`
-- Decision log: `docs/research/decision_log.md` (2026-05-01 USDCAD entry appended)
-- Tracker: `data/improvements.db::action_items` — filter status='OPEN' AND blocking_phase IN (7,8,9)
-- Recent commits: `git log --oneline ebbcc24..HEAD` (5 commits across 2 sessions)
+- This week's research: `docs/research/phase7_*.md`, `docs/research/ai001_*.md`, `docs/research/ai017_supplemental_findings_2026_05_01.md`, `docs/research/ai019_premise_reexamination.md`
+- Decision log: `docs/research/decision_log.md`
+- Tracker: `data/improvements.db::action_items` — filter `status IN ('OPEN','IN_PROGRESS')`
+- This week's commits: `git log --oneline ebbcc24..HEAD` (~25 commits across May 1–6)
