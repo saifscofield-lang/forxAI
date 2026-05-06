@@ -8,7 +8,11 @@ system:
   version: "0.3.0"
   mode: "live"
 
-# --- الأدوات المالية (7 أزواج) ---
+# --- الأدوات المالية (6 أزواج) ---
+# USDCAD removed 2026-05-06 (live.yaml catch-up sync). AI-020 dropped
+# USDCAD from paper.yaml + base.yaml on 2026-05-02 but missed
+# live.yaml — exactly the multi-file divergence class AI-004b's
+# parity check is designed to detect.
 instruments:
   - symbol: "EURUSD"
     digits: 5
@@ -25,12 +29,23 @@ instruments:
   - symbol: "AUDUSD"
     digits: 5
     pip_value: 0.0001
-  - symbol: "USDCAD"
-    digits: 5
-    pip_value: 0.0001
   - symbol: "USDCHF"
     digits: 5
     pip_value: 0.0001
+
+# Strategy blacklist — must stay in sync with base.yaml + paper.yaml.
+# AI-004b's parity check fires at engine startup AND every drift
+# cycle if these diverge. Lift conditions for ml_direct/XAUUSD:
+# AI-001 (zero-BUY fix) + Jun 1 gate review GREEN. See paper.yaml
+# header comment for the full rationale.
+strategy_blacklist:
+  - strategy: "ml_direct"
+    symbol: "XAUUSD"
+    reason: "Zero-BUY structural defect; meeting vote 6D 2026-04-28; lift requires AI-001 + June 1 gate"
+
+  - strategy: "ml_filtered_sma"
+    symbol: "XAUUSD"
+    reason: "Mirrored from base.yaml; strategy retired entirely 2026-04-28 (vote 5)"
 
 # --- الإطار الزمني ---
 timeframes:
