@@ -1,0 +1,30 @@
+# Pre-commit hooks for forexAI.
+#
+# To activate (one-time per clone):
+#   pip install pre-commit
+#   pre-commit install
+#
+# After that, every `git commit` will run the hooks below. Skip with
+# `git commit --no-verify` (discouraged — it's the same as bypassing
+# the safety net).
+#
+# Manual invocation any time:
+#   python scripts/check_schema_drift.py
+
+repos:
+  - repo: local
+    hooks:
+      - id: schema-drift
+        name: ORM <-> DB schema parity (AI-003)
+        entry: python scripts/check_schema_drift.py
+        language: system
+        # Always run — the check inspects the DB regardless of which
+        # files changed in the commit. A SQLAlchemy model edit + a
+        # forgotten ALTER TABLE would otherwise slip past a
+        # files-only filter.
+        always_run: true
+        pass_filenames: false
+        # Don't block commits when the local DB doesn't exist (fresh
+        # clones, CI runners that haven't downloaded a DB snapshot).
+        # Exit code 2 from the script means "DB not found"; 1 means
+        # "drift detected"; 0 means "ok". stages: pre-commit by default.
