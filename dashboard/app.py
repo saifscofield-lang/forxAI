@@ -407,6 +407,81 @@ else:
 st.divider()
 
 
+# ── Phase plan progress (steps closed in the last 7 days) ───────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _recent_phase_steps():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT phase_number, step_order, status, completed_at, "
+            "substr(description, 1, 100) AS description "
+            "FROM phase_steps "
+            "WHERE status = 'COMPLETED' AND completed_at IS NOT NULL "
+            "AND completed_at >= date('now', '-7 days') "
+            "ORDER BY completed_at DESC, phase_number, step_order",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _phase_progress_summary():
+    """Per-phase {done, total} for the active phases."""
+    try:
+        con = sqlite3.connect(IMP_DB)
+        rows = con.execute(
+            "SELECT phase_number, "
+            "SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS done, "
+            "COUNT(*) AS total "
+            "FROM phase_steps GROUP BY phase_number ORDER BY phase_number"
+        ).fetchall()
+        con.close()
+        return [(int(r[0]), int(r[1]), int(r[2])) for r in rows]
+    except Exception:
+        return []
+
+
+_recent_steps = _recent_phase_steps()
+if not _recent_steps.empty:
+    st.markdown("### 📈 تقدّم الخطة هذا الأسبوع")
+    progress = _phase_progress_summary()
+    progress_active = [(n, d, t) for n, d, t in progress if n in (6, 7) and t > 0]
+    if progress_active:
+        cols = st.columns(len(progress_active))
+        for col, (ph_num, done, total) in zip(cols, progress_active):
+            pct = (done / total * 100) if total else 0
+            color = "#4CAF50" if pct >= 75 else "#42A5F5" if pct >= 25 else "#888"
+            col.markdown(
+                f"<div style='background:#12151C;border:1px solid #2D3748;"
+                f"border-left:4px solid {color};border-radius:8px;padding:10px 14px'>"
+                f"<div style='font-size:11px;color:#888;font-weight:600'>Phase {ph_num} plan</div>"
+                f"<div style='font-size:18px;color:#FFF;font-weight:700;margin:4px 0'>"
+                f"{done} / {total} <span style='font-size:12px;color:{color}'>({pct:.0f}%)</span></div>"
+                f"<div style='background:#0D1117;border-radius:4px;height:6px;overflow:hidden'>"
+                f"<div style='background:{color};height:6px;width:{pct:.0f}%'></div>"
+                f"</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.caption(f"خطوات أُنجزت في آخر 7 أيام ({len(_recent_steps)} خطوة):")
+    for _, row in _recent_steps.head(8).iterrows():
+        st.markdown(
+            f"<div style='background:#12151C;border-left:3px solid #4CAF50;"
+            f"border-radius:6px;padding:6px 12px;margin-bottom:4px;font-size:12px'>"
+            f"<span style='color:#888;font-weight:600'>P{int(row['phase_number'])} · "
+            f"Step {int(row['step_order'])}</span> · "
+            f"<span style='color:#4CAF50;font-size:11px'>{row['completed_at']}</span>"
+            f"<div style='color:#DDD;font-size:12px;margin-top:2px'>{row['description']}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    st.divider()
+
+
 # ── Last 3 decisions ─────────────────────────────────────────────────────────
 @st.cache_data(ttl=120, show_spinner=False)
 def _last_decisions():
