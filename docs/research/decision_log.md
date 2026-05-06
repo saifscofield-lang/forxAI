@@ -327,3 +327,54 @@ Phase 7 BLOCKING items remaining: **2** (AI-017 still IN_PROGRESS pending projec
 - `docs/research/phase7_training_set_proposal.md` — α/β/γ options now actionable
 - `docs/meetings/2026_05_04_kickoff_readiness.md` — decision #4 status updated
 - AI-021 in `data/improvements.db::action_items`
+
+## 2026-05-06 — Option 1 decisions (post Phase-7-week)
+
+**Decisions:** Project lead picked Option 1 from the 2026-05-06 session report — make the four project-strategy decisions that gate the May 18 meta-labeler training week. All four resolved per the recommended defaults documented during the session. Recorded here so the next session inherits them as decided, not pending.
+
+### 1. AI-001 fix path: **Path D** (Phase 7 meta-labeler replaces `ml_direct`)
+
+| | |
+|---|---|
+| Decided | 2026-05-06 |
+| Rejected | Path A (empirically failed today, see `ai001_retrain_balanced_report.md`); Path B (~3 days work to produce a model the meta-labeler retires anyway); Path C (stop-gap threshold calibration, fights the model rather than fixing it) |
+| Rationale | Path D is the architectural answer. The Phase 7 meta-labeler trains on signal-quality, not direction prediction, which sidesteps the multi-class collapse-to-SELL bias by design. Following the Phase 7 timeline naturally retires `ml_direct` at the Jun 8 ship gate, replacing the broken model rather than patching it. |
+| Implication | The `ml_direct/XAUUSD` blacklist (Vote 6D) stays in effect through Phase 7 ship gate. No XAUUSD ML signals during Phase 8 paper trading window — the `tsmom_strategy.py` (Phase 6) carries gold exposure if any. |
+| Tracker | `AI-001` remains IN_PROGRESS until Phase 7 ship gate. Path D progress IS Phase 7 Steps 6→11 progress. |
+
+### 2. Meta-labeler training corpus: **γ** (retired strategies only)
+
+| | |
+|---|---|
+| Decided | 2026-05-06 |
+| Rejected | α (full v3, 178 trades — heavily contaminated by the AI-019 thought-blocked cohort); β (stratified cap, ~102 trades — partial mitigation only) |
+| Rationale | Today's AI-019 re-analysis showed the v3 ledger excluding the thought-blocked cohort is **−$27,311**. α and β both train on a corpus where 70 of the trades came from a window the engine wasn't supposed to be operating in. γ sidesteps this by construction — it trains only on the retired strategies' tails (`bollinger_bounce`, `ml_filtered_sma`, `asia_breakout`, `stop_hunt_reversal`), which are by definition the failure-mode population, and the meta-labeler learns "what NOT to take" rather than "what to take". |
+| Risk | Sample is smaller (~71 trades). The Phase 7 ship gate (F1 ≥ 0.55, PF ≥ 1.3) is harder to clear at n=71. Acceptable tradeoff — failing the gate on clean data is better than passing it on contaminated data. |
+| Implication | Phase 7 Step 6 (May 18) trains on the retired-strategies corpus. The meta-labeler's role becomes "veto bad signals from the surviving strategies" rather than "endorse good signals from a dataset half-spoiled by lucky-window trades". |
+
+### 3. MACD / RSI signal backfill source: **`signal_logs` replay**
+
+| | |
+|---|---|
+| Decided | 2026-05-06 |
+| Rejected | v1/v2 trades (regime contamination — those trades were under different SL/TP designs and pre-AI-002 blacklist state); reorder Phase 7 plan (~2 weeks behind schedule, not an option given Jun 8 ship gate) |
+| Rationale | `signal_logs` contains every signal the engine ever generated, including filtered/rejected ones. Replaying these against historical bars produces clean MACD/RSI ground truth under the same engine bias the live system has — preserves engine-feature parity. Cleaner than v1/v2 because it doesn't pull in label-mode shifts from earlier strategy designs. |
+| Implication | The replay produces a labelled MACD-signal dataset and a labelled RSI-signal dataset for Phase 7 Steps 6 + 7. Both are independent training-runs against γ corpus's "what NOT to take" target. |
+
+### 4. AI-017 status: **DONE** (close the parent audit)
+
+| | |
+|---|---|
+| Decided | 2026-05-06 |
+| Why now | Diagnostic phase shipped 2026-04-30 (`ai017_rr_audit.md`). Three follow-up findings raised: AI-017b (SL_HIT mislabel — DONE 2026-05-01), AI-019 (Apr-10 blacklist no-op — DONE today), AI-021 (sl_modifications persistence — OPEN, scoped for Phase 8 follow-up). The audit's job was to identify the issues; the issues are now identified and the action follow-ups are individually tracked. Parent can close. |
+| Tracker | `AI-017` IN_PROGRESS → DONE, `completed_date` 2026-05-06. |
+
+---
+
+### Aggregate effect on the project state
+
+These four decisions fully unblock the May 18 meta-labeler training week. Before today, Phase 7 Step 6 was waiting on (a) AI-017b sequencing — already done; (b) corpus α/β/γ — now γ; (c) MACD/RSI source — now `signal_logs` replay. Step 6 can start cleanly when the May 18 window opens.
+
+Phase 7 BLOCKING (OPEN + IN_PROGRESS) drops to **0** with AI-017 → DONE. AI-001 remains IN_PROGRESS but its resolution path (Path D = Phase 7 ship gate) is now decided rather than open, so it's no longer "blocking the kickoff agenda" in the original sense.
+
+Phase 8 BLOCKING (OPEN + IN_PROGRESS) drops to **1** (just GAP-OPS-01, deferred per project lead).
