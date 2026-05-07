@@ -20,14 +20,14 @@ section keeps growing as findings emerge.
 | 3 — Archive retired strategies | May 4–10 | ✓ DONE 2026-04-30 |
 | 4 — Feature importance run | May 11–17 | ✓ DONE 2026-05-06 (5 days early) |
 | 5 — `feature_selector.py` | May 11–17 | ✓ DONE 2026-05-06 (5 days early) |
-| 6 — Meta-labeler train MACD | May 18–24 | PENDING — needs α/β/γ + MACD backfill source |
-| 7 — Meta-labeler train RSI | May 18–24 | PENDING — same |
-| 8 — Refactor ml_filtered + engine | May 25–31 | PENDING — depends on Step 6 design |
+| 6 — Meta-labeler train MACD | May 18–24 | ✓ DONE 2026-05-07 — **DUAL GATE FAIL** (AUC 0.495, R-PF 0.840) |
+| 7 — Meta-labeler train RSI | May 18–24 | ✓ DONE 2026-05-07 — **DUAL GATE FAIL** (AUC 0.579, R-PF 0.906) |
+| 8 — Refactor ml_filtered + engine | May 25–31 | **ON HOLD** — no validated edge to wire (see Jun 8 brief) |
 | 9 — `kelly_sizer.py` | May 25–31 | ✓ DONE 2026-05-06 (19 days early) |
-| 10 — Full backtest 3yr + concentration | Jun 1–7 | PENDING — depends on Steps 6–8 |
-| 11 — Ship gate (F1 ≥ 0.55, PF ≥ 1.3 OOS) | Jun 8 | PENDING |
+| 10 — Full backtest 3yr + concentration | Jun 1–7 | **DEFERRED** — no Step 8 artifact to backtest |
+| 11 — Ship gate | Jun 8 | **RE-SCOPED to path-selection vote** — see `docs/meetings/2026_06_08_phase7_ship_gate.md` |
 
-**6 of 11 Phase 7 steps DONE.** All library code (Steps 1, 2, 5, 9) is complete. Step 4 (importance run) used the libraries on real data and produced the curated top-20 feature list.
+**8 of 11 Phase 7 steps DONE.** All library code (Steps 1, 2, 5, 9) is complete plus the two meta-labeler training runs (Steps 6–7) and Path B follow-up analysis. Verdict: **the meta-labeler / symbol-whitelist path is exhausted on the H1 corpus**. Recommended Jun 8 outcome = accept v3 as production through Phase 9, defer Phase 7 architecture change.
 
 ### Phase 6 plan progress
 
