@@ -1365,6 +1365,24 @@ class TradingEngine:
             strategy_version=trade.strategy_version,
         )
 
+        # GAP-FID-03: look up news context at trade open time.
+        # The in-flight signal dict had news_nearby/news_event_name/
+        # news_impact set, but the SignalLog write didn't persist them.
+        # Doing the lookup post-hoc against the news_events table is
+        # simpler than threading the fields through SignalLog and means
+        # backfill is a single function call.
+        try:
+            from news.news_filter import lookup_news_at_time
+            news_nearby, news_event_name, news_impact = lookup_news_at_time(
+                session, trade.symbol, trade.open_time,
+                window_hours=1.0, min_impact="HIGH",
+            )
+            result.news_nearby = news_nearby
+            result.news_event_name = news_event_name
+            result.news_impact = news_impact
+        except Exception as e:
+            logger.warning(f"news lookup failed for ticket {trade.ticket}: {e}")
+
         # Attach ML confidence, features, and context from SignalLog (looked
         # up earlier for the classifier).
         if signal_log:

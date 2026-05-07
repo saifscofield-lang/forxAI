@@ -5,6 +5,14 @@
 
 المستوى 1: منع التداول 30 دقيقة قبل/بعد أخبار HIGH impact
 المستوى 2: إضافة features للـ ML (حدث قريب، مستوى التأثير، المفاجأة)
+
+GAP-FID-03 helper (lookup_news_at_time, 2026-05-07): query the
+persisted news_events table for the news context around any
+historical trade open time. Used by the engine's close handler to
+populate TradeResult.news_nearby + news_event_name + news_impact
+(previously these were tagged on the in-flight signal dict but
+never written to DB). Enables the meta-labeler to use news
+context as a feature.
 """
 import json
 import hashlib
@@ -435,3 +443,84 @@ class NewsFilter:
             logger.error(f"Failed to save news events: {e}")
         finally:
             session.close()
+
+
+# ── GAP-FID-03 helper: post-hoc news-context lookup ────────────────────────
+
+def _symbol_currencies_for(symbol: str) -> set:
+    """Return the set of relevant currencies for a trading symbol.
+
+    Uses the same reverse mapping as NewsFilter._symbol_currencies but as a
+    standalone function so callers don't need a NewsFilter instance."""
+    currencies = set()
+    for currency, syms in CURRENCY_TO_SYMBOLS.items():
+        if symbol in syms:
+            currencies.add(currency)
+    return currencies
+
+
+def lookup_news_at_time(
+    session,
+    symbol: str,
+    when: datetime,
+    *,
+    window_hours: float = 1.0,
+    min_impact: str = "HIGH",
+):
+    """Query the persisted news_events table for the highest-impact event
+    affecting `symbol` within ±window_hours of `when`.
+
+    GAP-FID-03 helper: the engine's news filter blocks new signals
+    correctly but never persists the news context onto closed trades.
+    This function looks up that context post-hoc (at trade-close time
+    OR during a backfill) so trade_results.news_nearby /
+    news_event_name / news_impact get populated for the meta-labeler.
+
+    Args:
+        session: SQLAlchemy session against trading.db.
+        symbol: e.g. "EURUSD" — relevant currencies are derived via
+            CURRENCY_TO_SYMBOLS reverse mapping.
+        when: datetime to centre the window on. Typically the trade
+            open_time. Must be a naive datetime in UTC.
+        window_hours: half-window in hours. Default 1.0 (matches the
+            engine's get_nearby_events default).
+        min_impact: minimum impact level to count. Default "HIGH"
+            matches the live filter's threshold.
+
+    Returns:
+        Tuple (news_nearby, news_event_name, news_impact):
+          - news_nearby: True if any qualifying event found, False otherwise
+          - news_event_name: the closest qualifying event's name, or None
+          - news_impact: that event's impact level, or None
+
+        When multiple events match, returns the one closest in time to
+        `when` so the meta-labeler sees the most-relevant context."""
+    relevant = _symbol_currencies_for(symbol)
+    if not relevant:
+        return False, None, None
+
+    # Build the impact filter
+    if min_impact == "HIGH":
+        impact_set = {"HIGH"}
+    elif min_impact == "MEDIUM":
+        impact_set = {"HIGH", "MEDIUM"}
+    else:
+        impact_set = {"HIGH", "MEDIUM", "LOW"}
+
+    from_time = when - timedelta(hours=window_hours)
+    to_time = when + timedelta(hours=window_hours)
+
+    events = (
+        session.query(NewsEvent)
+        .filter(NewsEvent.time >= from_time)
+        .filter(NewsEvent.time <= to_time)
+        .filter(NewsEvent.currency.in_(relevant))
+        .filter(NewsEvent.impact.in_(impact_set))
+        .all()
+    )
+    if not events:
+        return False, None, None
+
+    # Pick the event closest to `when`
+    closest = min(events, key=lambda e: abs((e.time - when).total_seconds()))
+    return True, closest.event_name, closest.impact
