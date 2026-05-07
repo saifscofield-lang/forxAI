@@ -29,6 +29,7 @@ Output:
 Re-runnable. Read-only against parquet bars."""
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from datetime import datetime
@@ -43,6 +44,7 @@ from loguru import logger
 from strategies.tsmom.tsmom_strategy import compute_tsmom_signal
 
 V3_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "AUDUSD", "USDCHF"]
+TRIMMED_4 = ["USDJPY", "XAUUSD", "AUDUSD", "EURUSD"]
 RAW_DIR = Path("data/raw")
 ARTIFACTS_DIR = Path("artifacts")
 DOCS_DIR = Path("docs/research")
@@ -151,17 +153,19 @@ def metrics(returns: pd.Series, n_per_year: int = 12) -> dict:
 
 
 def render_report(per_symbol: dict, portfolio_metrics: dict,
-                  sub_periods: list, *, n_total: int) -> str:
+                  sub_periods: list, *, n_total: int,
+                  symbols: list = None) -> str:
     today = datetime.utcnow().strftime("%Y-%m-%d")
+    sym_list = symbols if symbols else list(per_symbol.keys())
     lines = []
     lines.append("# Phase 6 Step 2 — 10-year TSMOM Backtest\n")
     lines.append(f"**Date:** {today}  ")
-    lines.append(f"**Re-runnable:** `python scripts/backtest_tsmom.py`  ")
+    lines.append(f"**Re-runnable:** `python scripts/backtest_tsmom.py [--symbols ...]`  ")
     lines.append(f"**Source module:** `strategies/tsmom/tsmom_strategy.py` (Phase 6 Step 1, shipped 2026-05-06)  ")
     lines.append(f"**Phase 6 ship gate:** Sharpe ≥ 0.5 across ≥3 regimes; the 2026-04-17 prototype delivered Sharpe 0.13.\n")
 
     lines.append("## Backtest setup\n")
-    lines.append(f"- Symbols: {', '.join(V3_SYMBOLS)}")
+    lines.append(f"- Symbols: {', '.join(sym_list)} ({len(sym_list)} symbols)")
     lines.append("- Timeframe: D1 (daily bars)")
     lines.append(f"- Lookback: {LOOKBACK_DAYS} bars (12 months)")
     lines.append(f"- Vol window: {VOL_WINDOW_DAYS} bars (3 months)")
@@ -262,13 +266,31 @@ def render_report(per_symbol: dict, portfolio_metrics: dict,
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Phase 6 Step 2 TSMOM backtest")
+    parser.add_argument(
+        "--symbols", default=",".join(V3_SYMBOLS),
+        help="Comma-separated symbols. Default: all 6 v3 symbols. "
+             "Use 'TRIMMED' as shorthand for the 4-symbol positive-Sharpe set.",
+    )
+    parser.add_argument(
+        "--label", default="full",
+        help="Label suffix for output files (e.g. 'full', 'trimmed_4'). "
+             "Default 'full' overwrites the canonical Step 2 report.",
+    )
+    args = parser.parse_args()
+
+    if args.symbols.upper() == "TRIMMED":
+        symbols = TRIMMED_4
+    else:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+
     t0 = time.time()
-    logger.info("[phase6-step2] starting 10-year TSMOM backtest")
+    logger.info(f"[phase6-step2] starting TSMOM backtest on {len(symbols)} symbols: {symbols}")
 
     # 1. Run backtest per symbol
     per_symbol_metrics = {}
     all_rows = []
-    for sym in V3_SYMBOLS:
+    for sym in symbols:
         prices = load_d1(sym)
         if prices.empty:
             logger.warning(f"[{sym}] no D1 data, skipped")
@@ -321,14 +343,15 @@ def main() -> int:
     # 4. Save artifact
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    csv_path = ARTIFACTS_DIR / f"phase6_step2_tsmom_backtest_{today_str}.csv"
+    suffix = f"_{args.label}" if args.label != "full" else ""
+    csv_path = ARTIFACTS_DIR / f"phase6_step2_tsmom_backtest{suffix}_{today_str}.csv"
     combined.to_csv(csv_path, index=False)
 
     # 5. Save report
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = DOCS_DIR / "phase6_step2_tsmom_backtest.md"
+    report_path = DOCS_DIR / f"phase6_step2_tsmom_backtest{suffix}.md"
     report = render_report(per_symbol_metrics, portfolio_metrics_dict, sub_periods,
-                           n_total=len(combined))
+                           n_total=len(combined), symbols=symbols)
     report_path.write_text(report, encoding="utf-8")
 
     elapsed = time.time() - t0
@@ -339,7 +362,7 @@ def main() -> int:
     print(" Phase 6 Step 2 — 10-year TSMOM Backtest")
     print("=" * 78)
     pm = portfolio_metrics_dict
-    print(f"  Portfolio Sharpe (equal-weight, 6 symbols): {pm['sharpe']:.3f}")
+    print(f"  Portfolio Sharpe (equal-weight, {len(symbols)} symbols): {pm['sharpe']:.3f}")
     print(f"  Phase 6 ship gate target:                   ≥ 0.500")
     print(f"  2026-04-17 prototype baseline:              0.130")
     print(f"  Verdict:                                    "
