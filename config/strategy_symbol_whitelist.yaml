@@ -1,0 +1,11 @@
+_generated_by: scripts/run_path_b_stratification.py
+_generated_at: '2026-05-07T17:05:08'
+_gate:
+  min_rpf_per_half: 1.3
+  min_n_per_half: 15
+  split: median signal time
+_corpus: data/research/primary_signals.parquet
+whitelist:
+  macd_crossover: []
+  rsi_reversal:
+  - EURUSD
