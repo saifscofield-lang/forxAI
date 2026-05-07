@@ -41,6 +41,50 @@ class TelegramNotifier:
             logger.error(f"Telegram send failed: {e}")
             return False
 
+    def send_document(self, file_path: str, caption: str = "") -> bool:
+        """Send a file (document) to Telegram. Multipart upload."""
+        if not self.enabled:
+            return False
+        try:
+            import mimetypes, uuid
+            from pathlib import Path
+            p = Path(file_path)
+            if not p.exists():
+                logger.error(f"Telegram send_document: file not found {file_path}")
+                return False
+            content_type = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+            boundary = f"----forex-{uuid.uuid4().hex}"
+            url = f"https://api.telegram.org/bot{self.token}/sendDocument"
+
+            parts = []
+            def field(name, value):
+                parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode("utf-8"))
+            field("chat_id", self.chat_id)
+            if caption:
+                field("caption", caption)
+                field("parse_mode", "HTML")
+
+            file_bytes = p.read_bytes()
+            parts.append(
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{p.name}\"\r\n"
+                f"Content-Type: {content_type}\r\n\r\n".encode("utf-8")
+                + file_bytes
+                + b"\r\n"
+            )
+            parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+            body = b"".join(parts)
+
+            req = urllib.request.Request(
+                url, data=body, method="POST",
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())
+                return result.get("ok", False)
+        except Exception as e:
+            logger.error(f"Telegram send_document failed: {e}")
+            return False
+
     # ── Convenience methods ────────────────────────────────────
 
     def signal_executed(self, signal: dict, ticket: int = None):
