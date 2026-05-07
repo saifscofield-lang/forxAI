@@ -85,6 +85,8 @@ class Trade(Base):
     engine_version = Column(String(10), nullable=True)   # e.g. "2.0" — for filtering ML training data
     strategy_version = Column(String(10), nullable=True)  # e.g. "2.0" — strategy version at trade time
     data_group    = Column(String(20), nullable=True)     # OLD / TRANSITION / STABLE (added by segment_data.py; model sync 2026-04-22)
+    requested_price = Column(Float, nullable=True)        # GAP-FID-01: price at signal time (before order_send)
+    slippage_pips   = Column(Float, nullable=True)        # GAP-FID-01: |filled - requested| / pip_value
 
 
 class SignalLog(Base):

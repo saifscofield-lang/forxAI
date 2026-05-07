@@ -282,11 +282,28 @@ class MT5Adapter:
             logger.error(f"فشل الأمر: {result.comment} (كود: {result.retcode})")
             return {"success": False, "error": result.comment}
 
+        # GAP-FID-01: distinguish requested-price (what we sent) from
+        # filled-price (what MT5 actually filled at). The previous
+        # contract returned only `price` set to the requested value,
+        # which silently discarded slippage. Both are now returned.
+        requested_price = price
+        filled_price = float(result.price) if result.price else price
+
         logger.success(
-            f"Order executed | {order_type} {volume} {symbol} @ {price:.5f} | "
+            f"Order executed | {order_type} {volume} {symbol} @ {filled_price:.5f} "
+            f"(requested {requested_price:.5f}, slippage {abs(filled_price - requested_price):.5f}) | "
             f"Ticket: {result.order}"
         )
-        return {"success": True, "ticket": result.order, "price": price, "volume": volume}
+        return {
+            "success": True,
+            "ticket": result.order,
+            "price": filled_price,           # back-compat: callers reading 'price' get the
+                                              # filled price, which is what they actually want
+                                              # for storing as Trade.open_price
+            "filled_price": filled_price,    # explicit GAP-FID-01 keys
+            "requested_price": requested_price,
+            "volume": volume,
+        }
 
     def modify_position(
         self,

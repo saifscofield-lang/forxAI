@@ -1118,12 +1118,18 @@ class TradingEngine:
         self._last_ticket = result["ticket"]
         session = SessionLocal()
         try:
+            # GAP-FID-01: open_price = filled_price (what the broker actually
+            # filled at). requested_price + slippage_pips persisted alongside
+            # so we can audit fill quality after the fact and feature-engineer
+            # off it (Phase 7 meta-labeler may use slippage as a feature).
+            filled_price = result.get("filled_price", result["price"])
+            requested_price = result.get("requested_price", signal.get("price"))
             trade = Trade(
                 ticket=result["ticket"],
                 symbol=signal["symbol"],
                 order_type=signal["action"],
                 volume=lot_size,
-                open_price=result["price"],
+                open_price=filled_price,
                 open_time=datetime.now(),
                 stop_loss=signal["stop_loss"],
                 take_profit=signal["take_profit"],
@@ -1131,10 +1137,15 @@ class TradingEngine:
                 strategy_version=signal.get("strategy_version"),
                 comment=signal.get("reason", ""),
                 engine_version=ENGINE_VERSION,
+                requested_price=requested_price,
+                slippage_pips=signal.get("slippage_pips"),
             )
             session.add(trade)
             session.commit()
-            logger.info(f"Trade recorded: #{result['ticket']}")
+            logger.info(
+                f"Trade recorded: #{result['ticket']} | "
+                f"slippage={signal.get('slippage_pips', 0):.2f} pips"
+            )
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to record trade: {e}")
@@ -1244,6 +1255,8 @@ class TradingEngine:
         close_price = None
         close_time = None
         pnl = 0.0
+        swap = 0.0                 # GAP-FID-04: persisted from close_deal below
+        commission = 0.0           # GAP-FID-02: persisted from close_deal below
         close_comment = None       # AI-017b: capture raw close comment for evidence
         mt5_exit_tag = "UNKNOWN"   # initial classification from MT5 comment
         exit_reason = "UNKNOWN"    # final, post-classifier
@@ -1253,7 +1266,9 @@ class TradingEngine:
             close_deal = deals[-1]
             close_price = close_deal.price
             close_time = datetime.utcfromtimestamp(close_deal.time)
-            pnl = close_deal.profit + close_deal.swap + close_deal.commission
+            swap = float(close_deal.swap or 0.0)
+            commission = float(close_deal.commission or 0.0)
+            pnl = close_deal.profit + swap + commission
             close_comment = close_deal.comment or ""
 
             # Initial MT5 tag from comment substring. Note: the original
@@ -1288,10 +1303,16 @@ class TradingEngine:
         else:
             pnl_pips = 0.0
 
-        # Update trade record
+        # Update trade record. swap + commission persisted here
+        # (GAP-FID-02 + GAP-FID-04) so the TradeResult write below
+        # picks them up via trade.swap / trade.commission. The demo
+        # broker reports 0 for both so historical rows stay 0; the
+        # plumbing is in place for the live broker switchover.
         trade.close_price = close_price
         trade.close_time = close_time
         trade.profit = pnl
+        trade.swap = swap
+        trade.commission = commission
         trade.is_closed = True
 
         # Calculate trade duration
