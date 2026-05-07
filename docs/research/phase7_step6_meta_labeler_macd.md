@@ -67,6 +67,8 @@ Compare to the Phase 5 prototype (`docs/research/meta_labeler_prototype.md`): th
 
 First run reported R-PF = 2.10 (PASS). Investigation found the `realized_r_for_taken` helper used `rr_ratio` from `primary_signals.parquet` directly, but that column is in **ATR units** (WIN ≈ +3.5, LOSS ≈ −2.5 = TP/SL multipliers), not **R units**. Correct conversion is `rr_ratio / SL_ATR_MULTIPLIER`, which gives WIN = +1.4R, LOSS = −1.0R as expected. The fix is in the script header (`SL_ATR_MULTIPLIER = 2.5`). Future strategies with different SL multipliers (e.g., RSI Step 7) need the same treatment with their own multiplier.
 
+**$-PF caveat (uncovered during Step 7, 2026-05-07):** `pnl_price` in the corpus is *raw price* PnL, not dollar PnL. Across heterogeneous symbols this varies 4 orders of magnitude — EURUSD wins ≈ 0.008 (= 80 pips), USDJPY wins ≈ 0.78, XAUUSD wins ≈ 71. So `sum(wins) / sum(|losses|)` on raw `pnl_price` is dominated by whichever symbol the selector happens to pick, not by actual $-outcome. **R-PF is the trustworthy projection from this corpus.** Step 6's $-PF=1.42 PASS reading should be taken with that caveat — the dual-gate FAIL verdict is unaffected because R-PF=0.840 already failed independently. Step 10's full-backtest should recompute $-PF with explicit `pip_value × volume` normalization.
+
 ## Next
 
 - **Step 7** — same pipeline against the 329 RSI signals.
