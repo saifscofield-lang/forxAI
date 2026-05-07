@@ -555,6 +555,34 @@ class ShadowSignal(Base):
     )
 
 
+class TSMOMSignalLog(Base):
+    """Daily TSMOM scanner output. One row per (symbol, scan).
+
+    Phase 6 Step 3 Tier A — signal-only logging without order placement.
+    Each daily run of `scripts/run_tsmom_scan.py` writes one row per
+    symbol from the trimmed-4 universe (USDJPY/XAUUSD/AUDUSD/EURUSD).
+    Tier B (engine wiring + order placement) reads the latest row per
+    symbol to decide rebalance actions."""
+    __tablename__ = "tsmom_signal_log"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    run_time        = Column(DateTime, default=datetime.utcnow, nullable=False)
+    symbol          = Column(String(20), nullable=False)
+    direction       = Column(String(10), nullable=False)         # BUY / SELL / FLAT
+    raw_momentum    = Column(Float, nullable=False)              # 252-bar cumulative return
+    target_weight   = Column(Float, nullable=False)              # vol-targeted, capped
+    vol_annualised  = Column(Float, nullable=False)
+    price_now       = Column(Float, nullable=False)
+    atr_14          = Column(Float, nullable=True)
+    is_rebalance_day = Column(Boolean, nullable=False)
+    last_rebalance  = Column(DateTime, nullable=True)            # carried forward across runs
+    notes           = Column(String(200), nullable=True)
+
+    __table_args__ = (
+        Index("ix_tsmom_symbol_time", "symbol", "run_time"),
+    )
+
+
 def init_db():
     """إنشاء جداول قاعدة البيانات"""
     os.makedirs("data", exist_ok=True)
