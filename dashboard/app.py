@@ -305,48 +305,187 @@ def _all_phases_full():
         return pd.DataFrame()
 
 
-with st.expander("📋 جميع مراحل المشروع — نظرة شاملة"):
-    st.caption(
-        "خريطة المشروع كاملة. الحالة الفعلية تتغيّر تلقائياً مع تقدّم العمل. "
-        "النص أدناه يشرح غرض كل مرحلة بإيجاز للقارئ غير التقني."
-    )
-    full = _all_phases_full()
-    status_color_full = {
-        "IN_PROGRESS": "#42A5F5", "NOT_STARTED": "#888",
-        "DEFERRED": "#FFCA28", "COMPLETED": "#4CAF50",
-        "PENDING_ACTIVATION": "#9C27B0",
-    }
-    for _, ph in full.iterrows():
-        ph_num = int(ph["phase_number"])
-        # Phase 105 displays as 10.5
-        ph_label = "10.5" if ph_num == 105 else str(ph_num)
-        clr = status_color_full.get(ph["status"], "#888")
-        display_name = phase_display_name(ph["name"], ph.get("name_ar"))
-        purpose = phase_purpose_ar(ph_num)
-        st.markdown(
-            f"""
-            <div style="background:#12151C;border-left:3px solid {clr};
-                        border-radius:6px;padding:8px 14px;margin-bottom:6px">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                    <div>
-                        <span style="font-size:11px;color:#888;font-weight:600">
-                            Phase {ph_label}
-                        </span>
-                        <span style="font-size:13px;color:#FFF;font-weight:700;margin-right:8px">
-                            {display_name}
-                        </span>
-                    </div>
-                    <span style="font-size:11px;color:{clr};font-weight:700">
-                        {ph['status']}
+def _is_archived_phase(ph_num: int, status: str, notes: str | None) -> bool:
+    """Phase counts as archived when superseded, completed, or in the v1
+    legacy band (0-4). v3 active band (5-9) and v4 future band (11-14)
+    stay in the active list even when individual phases are completed/deferred."""
+    notes_l = (notes or "").lower()
+    if "supersed" in notes_l or "superseded" in notes_l:
+        return True
+    if ph_num in (0, 1, 2, 3, 4):       # v1 legacy — always archived
+        return True
+    if ph_num in (10, 105):             # v4 research closed
+        return True
+    if status == "COMPLETED" and ph_num not in (6, 7, 8, 9):
+        return True
+    return False
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _all_phases_with_notes():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT phase_number, name, name_ar, status, notes FROM project_phases "
+            "ORDER BY CASE WHEN phase_number = 105 THEN 10.5 ELSE phase_number END",
+            con,
+        )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def _render_phase_card(ph, status_color_full):
+    ph_num = int(ph["phase_number"])
+    ph_label = "10.5" if ph_num == 105 else str(ph_num)
+    clr = status_color_full.get(ph["status"], "#888")
+    display_name = phase_display_name(ph["name"], ph.get("name_ar"))
+    purpose = phase_purpose_ar(ph_num)
+    st.markdown(
+        f"""
+        <div style="background:#12151C;border-left:3px solid {clr};
+                    border-radius:6px;padding:8px 14px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <span style="font-size:11px;color:#888;font-weight:600">
+                        Phase {ph_label}
+                    </span>
+                    <span style="font-size:13px;color:#FFF;font-weight:700;margin-right:8px">
+                        {display_name}
                     </span>
                 </div>
-                <div style="font-size:11px;color:#AAA;margin-top:4px;line-height:1.5">
-                    {purpose if purpose else '—'}
-                </div>
+                <span style="font-size:11px;color:{clr};font-weight:700">
+                    {ph['status']}
+                </span>
             </div>
-            """,
-            unsafe_allow_html=True,
+            <div style="font-size:11px;color:#AAA;margin-top:4px;line-height:1.5">
+                {purpose if purpose else '—'}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+status_color_full = {
+    "IN_PROGRESS": "#42A5F5", "NOT_STARTED": "#888",
+    "DEFERRED": "#FFCA28", "COMPLETED": "#4CAF50",
+    "PENDING_ACTIVATION": "#9C27B0",
+}
+
+with st.expander("📋 المراحل النشطة — v3 (5-9) و v4 (11-14)"):
+    st.caption(
+        "المراحل قيد العمل أو المُخطَّطة. v3 = المسار الإنتاجي الحالي. "
+        "v4 = توسعات مستقبلية (multi-asset). الأرشيف للمراحل المُستبدَلة في الأسفل."
+    )
+    full = _all_phases_with_notes()
+    if full.empty:
+        st.warning("تعذّر تحميل المراحل.")
+    else:
+        active = full[~full.apply(
+            lambda r: _is_archived_phase(int(r["phase_number"]), r["status"], r.get("notes")),
+            axis=1
+        )]
+        for _, ph in active.iterrows():
+            _render_phase_card(ph, status_color_full)
+
+
+# ── Complete plan tree — phase + step level ──────────────────────────────────
+@st.cache_data(ttl=120, show_spinner=False)
+def _all_steps_for_active_phases():
+    try:
+        con = sqlite3.connect(IMP_DB)
+        df = pd.read_sql(
+            "SELECT phase_number, step_order, description, description_ar, "
+            "status, completed_at, notes "
+            "FROM phase_steps "
+            "WHERE phase_number IN (5,6,7,8,9,11,12,13,14) "
+            "ORDER BY phase_number, step_order",
+            con,
         )
+        con.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+with st.expander("🌳 خطة كاملة بمستوى الخطوات (Phase + Step)"):
+    st.caption(
+        "كل المراحل النشطة مع جميع خطواتها. اللون يعكس الحالة. "
+        "خطوات المراحل المؤرشفة لا تظهر هنا — افتح قسم الأرشيف للمزيد."
+    )
+    steps_df = _all_steps_for_active_phases()
+    if steps_df.empty:
+        st.warning("تعذّر تحميل خطوات الخطة.")
+    else:
+        step_color = {
+            "COMPLETED": "#4CAF50", "IN_PROGRESS": "#42A5F5",
+            "PENDING": "#888", "BLOCKED": "#EF5350",
+            "DEFERRED": "#FFCA28", "RESCOPED": "#9C27B0",
+            "CANCELLED": "#666", "SKIPPED": "#666",
+        }
+        # Group by phase, render each as a sub-section
+        for ph_num, ph_steps in steps_df.groupby("phase_number"):
+            ph_num = int(ph_num)
+            ph_label = "10.5" if ph_num == 105 else str(ph_num)
+            n_total = len(ph_steps)
+            n_done = int((ph_steps["status"] == "COMPLETED").sum())
+            n_blocked = int(ph_steps["status"].isin(["BLOCKED","DEFERRED","RESCOPED"]).sum())
+            block_text = f" · {n_blocked} محجوب/مؤجَّل" if n_blocked else ""
+            st.markdown(
+                f"<div style='margin-top:10px;font-size:13px;color:#42A5F5;font-weight:700'>"
+                f"Phase {ph_label} — {n_done}/{n_total} مكتمل{block_text}</div>",
+                unsafe_allow_html=True,
+            )
+            for _, st_row in ph_steps.iterrows():
+                clr = step_color.get(st_row["status"], "#888")
+                desc = st_row.get("description_ar") or st_row["description"] or "—"
+                desc = (desc[:120] + "…") if len(desc) > 120 else desc
+                done_badge = ""
+                if st_row["completed_at"]:
+                    done_badge = (
+                        f"<span style='font-size:10px;color:#4CAF50;margin-right:6px'>"
+                        f"✓ {st_row['completed_at']}</span>"
+                    )
+                notes_summary = ""
+                if st_row.get("notes"):
+                    n = str(st_row["notes"])
+                    notes_summary = (n[:140] + "…") if len(n) > 140 else n
+                st.markdown(
+                    f"""
+                    <div style="background:#0D1117;border-left:2px solid {clr};
+                                border-radius:4px;padding:6px 10px;margin:3px 0 3px 18px">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span style="font-size:12px;color:#FFF">
+                                <span style="color:#888">#{st_row['step_order']}</span> {desc}
+                            </span>
+                            <span>{done_badge}<span style="font-size:10px;color:{clr};font-weight:700">{st_row['status']}</span></span>
+                        </div>
+                        {f"<div style='font-size:10px;color:#888;margin-top:3px;line-height:1.4'>{notes_summary}</div>" if notes_summary else ""}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+
+# ── Archived phases (collapsed by default) ──────────────────────────────────
+with st.expander("📦 الأرشيف — مراحل مُستبدَلة أو مُغلقة (v1 + v4 research)"):
+    st.caption(
+        "مراحل لم تعد قيد العمل: v1 (0-4) استُبدِلت بـ v3 في 17 أبريل 2026؛ "
+        "Phase 10 و 10.5 (أبحاث crypto momentum) أُغلقت في أبريل 2026."
+    )
+    full = _all_phases_with_notes()
+    if not full.empty:
+        archived = full[full.apply(
+            lambda r: _is_archived_phase(int(r["phase_number"]), r["status"], r.get("notes")),
+            axis=1
+        )]
+        if archived.empty:
+            st.info("لا توجد مراحل مؤرشفة.")
+        else:
+            for _, ph in archived.iterrows():
+                _render_phase_card(ph, status_color_full)
 
 st.divider()
 
