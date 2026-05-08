@@ -295,6 +295,48 @@ with inner[1]:
     else:
         st.info("لا توجد صفقات مغلقة بعد.")
 
+    # AI-013: Per-symbol per-direction trade counts ───────────────────
+    st.markdown("### عدد الصفقات حسب الزوج × الاتجاه")
+    st.caption(
+        "خلايا n<10 (مظلَّلة بالأحمر) تعتبر *underpowered* — لا تعتمد عليها "
+        "في قرارات نشر استراتيجية. التقرير الخارجي 2026-04-28 اعتمد على "
+        "خلايا underpowered بدون تنبيه؛ هذا الجدول يمنع التكرار."
+    )
+    try:
+        con = sqlite3.connect("data/trading.db")
+        cnt_df = pd.read_sql(
+            "SELECT symbol, action AS direction, COUNT(*) AS n, "
+            "SUM(CASE WHEN profitable=1 THEN 1 ELSE 0 END) AS wins, "
+            "ROUND(AVG(CASE WHEN profitable=1 THEN 100.0 ELSE 0.0 END), 1) AS wr_pct, "
+            "ROUND(SUM(pnl), 2) AS pnl_total "
+            "FROM trade_results "
+            "WHERE action IS NOT NULL "
+            "GROUP BY symbol, action ORDER BY symbol, direction",
+            con,
+        )
+        con.close()
+    except Exception as e:
+        cnt_df = pd.DataFrame()
+        st.caption(f"تعذّر تحميل أعداد الصفقات: {e}")
+    if cnt_df.empty:
+        st.info("لا توجد بيانات.")
+    else:
+        n_under = int((cnt_df["n"] < 10).sum())
+        if n_under:
+            st.warning(f"⚠️ {n_under} خلية بـ n<10 — استبعدها من قرارات النشر.")
+        def _highlight_underpowered(row):
+            if row["n"] < 10:
+                return ["background-color:#3a1f1f;color:#FF8A80"] * len(row)
+            return [""] * len(row)
+        styled = (cnt_df
+                  .rename(columns={
+                      "symbol": "زوج", "direction": "اتجاه", "n": "n",
+                      "wins": "wins", "wr_pct": "WR%", "pnl_total": "PnL إجمالي $",
+                  })
+                  .style.apply(_highlight_underpowered, axis=1)
+                  .format({"PnL إجمالي $": "{:+,.2f}"}))
+        st.dataframe(styled, hide_index=True, width="stretch", height=350)
+
     st.markdown("### الربح / الخسارة الشهري")
     monthly = get_monthly_pnl()
     if not monthly.empty:

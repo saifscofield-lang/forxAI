@@ -773,6 +773,59 @@ def _engine_health():
     return info
 
 
+# AI-008: Shadow staleness alert ─────────────────────────────────────────────
+# The 6-day shadow outage in 2026-04 went undetected because no surface flagged
+# staleness. This widget breaks the silence: it queries the most recent
+# shadow_signals.time and renders a visible banner when age > 30 min during
+# market hours. Outside market hours staleness is expected and shown muted.
+@st.cache_data(ttl=60, show_spinner=False)
+def _shadow_staleness():
+    try:
+        con = sqlite3.connect("data/trading.db")
+        row = con.execute(
+            "SELECT MAX(time) FROM shadow_signals"
+        ).fetchone()
+        con.close()
+        last_ts = row[0] if row else None
+    except Exception:
+        last_ts = None
+    if not last_ts:
+        return {"last_ts": None, "age_min": None}
+    try:
+        # SQLite TEXT timestamps may be ISO with or without 'T'
+        ts = pd.to_datetime(last_ts)
+        age_min = (datetime.now(timezone.utc).replace(tzinfo=None) - ts.to_pydatetime()).total_seconds() / 60.0
+    except Exception:
+        return {"last_ts": str(last_ts), "age_min": None}
+    return {"last_ts": str(ts), "age_min": age_min}
+
+
+def _market_open_now() -> bool:
+    now = datetime.now(timezone.utc)
+    wd, hr = now.weekday(), now.hour
+    if wd == 5: return False
+    if wd == 6 and hr < 22: return False
+    if wd == 4 and hr >= 22: return False
+    return True
+
+
+_shadow = _shadow_staleness()
+_age = _shadow.get("age_min")
+_market = _market_open_now()
+if _age is None:
+    pass  # silent — table empty or query failed; engine-health tile handles
+elif _age > 30 and _market:
+    st.error(
+        f"🚨 **shadow_signals بدون كتابة منذ {int(_age)} دقيقة** "
+        f"(آخر كتابة: {_shadow['last_ts']}، السوق مفتوح). "
+        f"تحقق من المحرّك — قد تكون كتابة الإشارات الظلية معطّلة "
+        f"(مثل حادثة 6 أيام في أبريل 2026).",
+    )
+elif _age > 30:
+    st.caption(
+        f"ℹ️ shadow_signals عمر آخر كتابة {int(_age)} دقيقة (السوق مغلق — متوقّع)"
+    )
+
 st.markdown("### ⚙️ صحة المحرّك")
 h = _engine_health()
 c1, c2, c3, c4, c5 = st.columns(5)

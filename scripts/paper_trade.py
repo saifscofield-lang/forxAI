@@ -86,7 +86,14 @@ def create_strategies(config):
         params = opt_params.get(symbol, {})
         sl_mult = float(params.get("atr_sl_mult", 2.0))
         tp_mult = float(params.get("atr_tp_mult", 3.0))
-        pip_value = 0.01 if ("JPY" in symbol or "XAU" in symbol) else 0.0001
+        # GAP-FID-06: pip_value is sourced from config (paper.yaml /
+        # base.yaml `instruments[].pip_value`) and consumed by the
+        # engine via `inst["pip_value"]`. Previously hardcoded here as
+        # `0.01 if JPY|XAU else 0.0001`, which (a) was never read by
+        # the strategy constructors below and (b) muddled the
+        # convention vs the YAML config. Removed 2026-05-08 — canonical
+        # source is the config; verify with `mt5.symbol_info(symbol).point`
+        # at engine startup if a parity check is needed.
         added = []
 
         def is_approved(strat_name):

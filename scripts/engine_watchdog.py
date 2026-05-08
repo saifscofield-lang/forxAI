@@ -104,11 +104,20 @@ def read_log_state() -> dict:
 
 
 def count_engine_processes() -> int:
-    """Return number of running paper_trade.py python processes."""
+    """Return number of running paper_trade.py python processes — scoped to
+    the forexAI project path (GAP-OPS-02).
+
+    Without the path filter, the watchdog also counts paper_trade.py in
+    other Python projects on the same machine (e.g. SynthAI on Deriv has
+    its own paper_trade.py). That makes the duplicate-PID alert fire
+    permanently as long as both projects run. Filtering on the
+    `D:\\forexAI` path in CommandLine restricts the count to this
+    project's processes only."""
     try:
         result = subprocess.run(
             ["wmic", "process", "where",
-             "Name='python.exe' and CommandLine like '%paper_trade.py%'",
+             "Name='python.exe' and CommandLine like '%paper_trade.py%' "
+             "and CommandLine like '%forexAI%'",
              "get", "ProcessId"],
             capture_output=True, text=True, timeout=8,
         )
