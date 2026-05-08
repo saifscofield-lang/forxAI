@@ -775,9 +775,18 @@ def _engine_health():
 
 # AI-008: Shadow staleness alert ─────────────────────────────────────────────
 # The 6-day shadow outage in 2026-04 went undetected because no surface flagged
-# staleness. This widget breaks the silence: it queries the most recent
-# shadow_signals.time and renders a visible banner when age > 30 min during
-# market hours. Outside market hours staleness is expected and shown muted.
+# staleness. Tiered thresholds tuned for this engine's actual cadence:
+# H1 strategies + ml_direct produce shadow rows roughly once per H1 candle
+# (= 60 min), so single-hour gaps are normal. Two consecutive missed candles
+# (~120-150 min) is the real "something is wrong" signal.
+#
+# Threshold history: original implementation used 30 min (audit-suggested
+# generic), which fired routinely on this H1-cadence engine. Tuned 2026-05-08
+# to 90/150 min after the first false-positive case observed live.
+SHADOW_STALE_INFO_MIN = 90    # 1× H1 candle + buffer
+SHADOW_STALE_ERROR_MIN = 150  # 2 missed candles — real outage signal
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _shadow_staleness():
     try:
@@ -792,7 +801,6 @@ def _shadow_staleness():
     if not last_ts:
         return {"last_ts": None, "age_min": None}
     try:
-        # SQLite TEXT timestamps may be ISO with or without 'T'
         ts = pd.to_datetime(last_ts)
         age_min = (datetime.now(timezone.utc).replace(tzinfo=None) - ts.to_pydatetime()).total_seconds() / 60.0
     except Exception:
@@ -814,14 +822,20 @@ _age = _shadow.get("age_min")
 _market = _market_open_now()
 if _age is None:
     pass  # silent — table empty or query failed; engine-health tile handles
-elif _age > 30 and _market:
+elif _age >= SHADOW_STALE_ERROR_MIN and _market:
     st.error(
         f"🚨 **shadow_signals بدون كتابة منذ {int(_age)} دقيقة** "
-        f"(آخر كتابة: {_shadow['last_ts']}، السوق مفتوح). "
+        f"(آخر كتابة: {_shadow['last_ts']}، السوق مفتوح، >2 شموع H1 مفقودة). "
         f"تحقق من المحرّك — قد تكون كتابة الإشارات الظلية معطّلة "
         f"(مثل حادثة 6 أيام في أبريل 2026).",
     )
-elif _age > 30:
+elif _age >= SHADOW_STALE_INFO_MIN and _market:
+    st.warning(
+        f"⏱️ shadow_signals عمر آخر كتابة {int(_age)} دقيقة (آخر كتابة: "
+        f"{_shadow['last_ts']}). شمعة H1 واحدة فُوِّتت — راقب؛ سيصبح خطأ عند "
+        f"{SHADOW_STALE_ERROR_MIN} دقيقة."
+    )
+elif _age >= SHADOW_STALE_INFO_MIN:
     st.caption(
         f"ℹ️ shadow_signals عمر آخر كتابة {int(_age)} دقيقة (السوق مغلق — متوقّع)"
     )
