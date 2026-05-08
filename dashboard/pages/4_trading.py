@@ -188,6 +188,46 @@ with inner[0]:
             hide_index=True, width="stretch",
         )
 
+    # TSMOM daily signals (Phase 6 Step 3 Tier A) ─────────────────────
+    st.markdown("### إشارات TSMOM اليومية (Phase 6)")
+    try:
+        con = sqlite3.connect("data/trading.db")
+        tsmom_df = pd.read_sql(
+            "SELECT symbol, run_time, direction, raw_momentum, target_weight, "
+            "vol_annualised, price_now, is_rebalance_day "
+            "FROM tsmom_signal_log "
+            "WHERE id IN (SELECT MAX(id) FROM tsmom_signal_log GROUP BY symbol) "
+            "ORDER BY symbol",
+            con,
+        )
+        con.close()
+    except Exception:
+        tsmom_df = pd.DataFrame()
+
+    if tsmom_df.empty:
+        st.caption("لا توجد إشارات TSMOM بعد. شغّل `python scripts/run_tsmom_scan.py` أو انتظر الجدولة اليومية (03:30 محلياً).")
+    else:
+        last_run = pd.to_datetime(tsmom_df["run_time"]).max()
+        st.caption(f"آخر مسح: {last_run.strftime('%Y-%m-%d %H:%M')} UTC")
+        view = tsmom_df.copy()
+        view["raw_momentum"] = view["raw_momentum"].apply(lambda x: f"{x:+.2%}")
+        view["target_weight"] = view["target_weight"].apply(lambda x: f"{x:.2f}x")
+        view["vol_annualised"] = view["vol_annualised"].apply(lambda x: f"{x:.1%}")
+        view["is_rebalance_day"] = view["is_rebalance_day"].map({1: "نعم", 0: "—", True: "نعم", False: "—"})
+        view = view[["symbol", "direction", "raw_momentum", "target_weight",
+                     "vol_annualised", "price_now", "is_rebalance_day"]]
+        st.dataframe(
+            view.rename(columns={
+                "symbol": "زوج", "direction": "اتجاه",
+                "raw_momentum": "زخم 12 شهر",
+                "target_weight": "وزن مستهدف",
+                "vol_annualised": "تذبذب سنوي",
+                "price_now": "سعر",
+                "is_rebalance_day": "يوم إعادة توازن",
+            }).style.format({"سعر": "{:.5f}"}),
+            hide_index=True, width="stretch",
+        )
+
     st.markdown("### التقويم الاقتصادي — 24 ساعة قادمة")
     upcoming = get_upcoming_news(hours_ahead=24)
     if upcoming.empty:
