@@ -1,4 +1,5 @@
 @echo off
+title forxAI TSMOM Scan
 :: ForexAI TSMOM daily scan — Phase 6 Step 3 Tier A
 :: One-shot. Triggered daily by Windows Task Scheduler (see
 :: setup_tsmom_schedule.bat). MT5 terminal must be running.
