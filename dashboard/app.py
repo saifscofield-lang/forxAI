@@ -203,6 +203,135 @@ page_intro(
 )
 
 
+# ── Code freeze progress — STABLE_v2 evaluation window ──────────────────────
+# The single most important discipline of the project right now: stop
+# changing trading code so the system can be evaluated on a clean dataset.
+# This widget tracks: days into freeze, days remaining to gate, trades
+# accumulated, and progress toward the H4 (≥30 closed trades) gate.
+FREEZE_START = date(2026, 5, 9)
+FREEZE_GATE_TARGET = date(2026, 6, 20)
+PHASE_8_MIN_TRADES = 30
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _freeze_progress() -> dict:
+    today = date.today()
+    days_in = (today - FREEZE_START).days
+    days_to_gate = (FREEZE_GATE_TARGET - today).days
+    target_total = (FREEZE_GATE_TARGET - FREEZE_START).days
+    pct_time = max(0, min(100, days_in / max(1, target_total) * 100))
+
+    n_total = n_closed = n_open = 0
+    n_tsmom = 0
+    try:
+        con = sqlite3.connect("data/trading.db")
+        # Count v3 strategy trades (exclude TSMOM since per Phase 8
+        # success criteria caveat 3, TSMOM is a parallel layer not in H4)
+        n_total = con.execute(
+            "SELECT COUNT(*) FROM trades "
+            "WHERE open_time >= ? "
+            "AND (strategy IS NULL OR strategy != 'tsmom') "
+            "AND (comment IS NULL OR comment NOT LIKE 'TSMOM-%')",
+            (FREEZE_START.isoformat(),),
+        ).fetchone()[0]
+        n_closed = con.execute(
+            "SELECT COUNT(*) FROM trades "
+            "WHERE open_time >= ? AND is_closed = 1 "
+            "AND (strategy IS NULL OR strategy != 'tsmom') "
+            "AND (comment IS NULL OR comment NOT LIKE 'TSMOM-%')",
+            (FREEZE_START.isoformat(),),
+        ).fetchone()[0]
+        n_open = n_total - n_closed
+        # TSMOM count separately (informational)
+        n_tsmom = con.execute(
+            "SELECT COUNT(*) FROM trades "
+            "WHERE open_time >= ? AND comment LIKE 'TSMOM-%'",
+            (FREEZE_START.isoformat(),),
+        ).fetchone()[0]
+        con.close()
+    except Exception:
+        pass
+
+    pct_trades = max(0, min(100, n_closed / PHASE_8_MIN_TRADES * 100))
+    return {
+        "days_in": days_in, "days_to_gate": days_to_gate,
+        "target_total": target_total, "pct_time": pct_time,
+        "n_total": n_total, "n_closed": n_closed, "n_open": n_open,
+        "n_tsmom": n_tsmom,
+        "pct_trades": pct_trades,
+        "trades_needed": max(0, PHASE_8_MIN_TRADES - n_closed),
+    }
+
+
+fp = _freeze_progress()
+st.markdown("### 🧊 نافذة التجميد — تقييم Phase 8")
+st.caption(
+    f"**الهدف:** تقييم النظام على مجموعة بيانات نظيفة من STABLE_v2 (الكود مجمَّد منذ {FREEZE_START}). "
+    f"**موعد المراجعة المستهدف:** {FREEZE_GATE_TARGET} (تمدّد إذا لم تكتمل ≥{PHASE_8_MIN_TRADES} صفقة مغلقة بحلول التاريخ). "
+    f"خلال هذه النافذة: لا تغييرات في `engine/`, `strategies/`, `risk/` — انظر `docs/research/code_freeze_policy.md`."
+)
+
+fcol1, fcol2, fcol3 = st.columns(3)
+with fcol1:
+    days_label = "يوم" if fp["days_in"] != 1 else "يوم"
+    st.metric(
+        f"الأيام داخل التجميد",
+        f"{fp['days_in']} / {fp['target_total']}",
+        delta=f"{fp['pct_time']:.0f}% من النافذة",
+        delta_color="off",
+    )
+    st.markdown(
+        f"<div style='background:#0D1117;border-radius:4px;height:8px;overflow:hidden'>"
+        f"<div style='background:#42A5F5;height:8px;width:{fp['pct_time']:.0f}%'></div></div>",
+        unsafe_allow_html=True,
+    )
+
+with fcol2:
+    if fp["days_to_gate"] >= 0:
+        st.metric(
+            "أيام حتى المراجعة",
+            f"{fp['days_to_gate']} يوم",
+            delta=f"المستهدف: {FREEZE_GATE_TARGET}",
+            delta_color="off",
+        )
+    else:
+        st.metric(
+            "تجاوز موعد المراجعة",
+            f"{abs(fp['days_to_gate'])} يوم",
+            delta="انتظار اكتمال H4 (≥30 صفقة)",
+            delta_color="inverse",
+        )
+
+with fcol3:
+    color = "#4CAF50" if fp["n_closed"] >= PHASE_8_MIN_TRADES else "#42A5F5" if fp["n_closed"] >= PHASE_8_MIN_TRADES * 0.5 else "#888"
+    st.metric(
+        f"صفقات v3 مغلقة (H4)",
+        f"{fp['n_closed']} / {PHASE_8_MIN_TRADES}",
+        delta=f"{fp['n_open']} مفتوحة · {fp['trades_needed']} باقية" if fp["trades_needed"] > 0
+              else "اجتاز عتبة H4 ✓",
+        delta_color="off",
+    )
+    st.markdown(
+        f"<div style='background:#0D1117;border-radius:4px;height:8px;overflow:hidden'>"
+        f"<div style='background:{color};height:8px;width:{fp['pct_trades']:.0f}%'></div></div>",
+        unsafe_allow_html=True,
+    )
+
+if fp["n_tsmom"] > 0:
+    st.caption(
+        f"ℹ️ {fp['n_tsmom']} صفقة TSMOM (طبقة موازية — غير محسوبة في عتبة H4 لـ Phase 8). "
+        f"انظر `docs/research/phase8_success_criteria.md`."
+    )
+
+if fp["n_closed"] >= PHASE_8_MIN_TRADES and fp["days_to_gate"] <= 14:
+    st.success(
+        f"🎯 جاهز لمراجعة بوابة Phase 8 — H4 مكتمل ({fp['n_closed']} ≥ {PHASE_8_MIN_TRADES}) "
+        f"و التجميد في أيامه الـ14 الأخيرة (H7)."
+    )
+
+st.divider()
+
+
 # ── Phase status header (5-card row) ─────────────────────────────────────────
 @st.cache_data(ttl=120, show_spinner=False)
 def _all_phases():
