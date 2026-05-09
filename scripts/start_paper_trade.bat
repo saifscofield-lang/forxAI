@@ -1,5 +1,5 @@
 @echo off
-title forxAI Bot
+title ForexAI Bot
 :: ForexAI Paper Trading - Auto-restart on crash/network failure
 cd /d D:\forexAI
 call venv\Scripts\activate.bat

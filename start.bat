@@ -1,5 +1,5 @@
 @echo off
-title forxAI Launcher
+title ForexAI Launcher
 color 0A
 cd /d d:\forexAI
 
@@ -25,14 +25,14 @@ echo.
 
 REM ── 2. Start Trading Bot in a new window (auto-restart on crash) ──
 echo  [2/3] Starting Trading Bot (Paper Trading + Telegram)...
-start "forxAI Bot" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && for /L %%x in () do (python scripts\paper_trade.py && exit /b || echo [!] Crashed. Restarting in 30s... && timeout /t 30 /nobreak)"
+start "ForexAI Bot" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && for /L %%x in () do (python scripts\paper_trade.py && exit /b || echo [!] Crashed. Restarting in 30s... && timeout /t 30 /nobreak)"
 
 REM Wait 3 seconds for the bot to initialize
 timeout /t 3 /nobreak >nul
 
 REM ── 3. Start Streamlit Dashboard in a new window ──────────────────
 echo  [3/3] Starting Dashboard...
-start "forxAI Dashboard" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && streamlit run dashboard\app.py"
+start "ForexAI Dashboard" cmd /k "cd /d d:\forexAI && venv\Scripts\activate && streamlit run dashboard\app.py"
 
 REM Wait 4 seconds for Streamlit to start
 timeout /t 4 /nobreak >nul

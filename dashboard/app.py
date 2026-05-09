@@ -773,6 +773,78 @@ def _engine_health():
     return info
 
 
+# Running processes — engine, scheduler, dashboard ──────────────────────────
+# Surfaces "what's actually running on this machine for forexAI" so you don't
+# need to alt-tab through cmd windows. Three checks: engine python.exe count,
+# Windows Task Scheduler entries (TSMOM daily), and the streamlit dashboard
+# itself (which is rendering this page right now, so always at least 1).
+@st.cache_data(ttl=30, show_spinner=False)
+def _running_processes() -> dict:
+    import subprocess
+    info = {"engine": -1, "scheduler_state": "—", "scheduler_last_run": "—",
+            "scheduler_next_run": "—", "scheduler_last_result": "—"}
+    # Engine count via the same wmic filter the watchdog uses
+    try:
+        result = subprocess.run(
+            ["wmic", "process", "where",
+             "Name='python.exe' and CommandLine like '%paper_trade.py%' "
+             "and ExecutablePath like '%forexAI%'",
+             "get", "ProcessId"],
+            capture_output=True, text=True, timeout=8,
+        )
+        info["engine"] = sum(1 for ln in result.stdout.splitlines() if ln.strip().isdigit())
+    except Exception:
+        pass
+    # Task Scheduler — TSMOM daily entry
+    try:
+        result = subprocess.run(
+            ["schtasks", "/query", "/tn", "ForexAI_TSMOM_Daily", "/fo", "LIST", "/v"],
+            capture_output=True, text=True, timeout=8,
+        )
+        for ln in result.stdout.splitlines():
+            ln_l = ln.lower()
+            if "status:" in ln_l and "schedul" not in ln_l:  # avoid "Schedule Type"
+                info["scheduler_state"] = ln.split(":", 1)[1].strip()
+            elif "last run time:" in ln_l:
+                info["scheduler_last_run"] = ln.split(":", 1)[1].strip()
+            elif "next run time:" in ln_l:
+                info["scheduler_next_run"] = ln.split(":", 1)[1].strip()
+            elif "last result:" in ln_l:
+                info["scheduler_last_result"] = ln.split(":", 1)[1].strip()
+    except Exception:
+        pass
+    return info
+
+
+st.markdown("### 🖥️ العمليات الجارية")
+proc = _running_processes()
+pc1, pc2, pc3 = st.columns(3)
+with pc1:
+    if proc["engine"] > 0:
+        st.metric("محرّك التداول", "يعمل", delta=f"{proc['engine']} python.exe", delta_color="off")
+    elif proc["engine"] == 0:
+        st.metric("محرّك التداول", "متوقّف", delta="نفّذ start.bat", delta_color="inverse")
+    else:
+        st.metric("محرّك التداول", "—", delta="wmic غير متاح", delta_color="off")
+with pc2:
+    sched_ok = proc["scheduler_state"] in ("Ready", "Running")
+    color = "off" if sched_ok else "inverse"
+    label = {"Ready": "جاهز", "Running": "يعمل", "Disabled": "معطّل"}.get(
+        proc["scheduler_state"], proc["scheduler_state"]
+    )
+    st.metric("جدولة TSMOM اليومية", label, delta=proc["scheduler_last_result"], delta_color=color)
+    if proc["scheduler_next_run"] != "—":
+        st.caption(f"التشغيل التالي: {proc['scheduler_next_run']}")
+with pc3:
+    st.metric("لوحة التحكّم", "تعمل", delta="streamlit", delta_color="off")
+    st.caption("هذه الصفحة")
+
+if proc["scheduler_last_run"] != "—":
+    st.caption(f"ℹ️ آخر تشغيل لجدولة TSMOM: {proc['scheduler_last_run']}")
+
+st.divider()
+
+
 # AI-008: Shadow staleness alert ─────────────────────────────────────────────
 # The 6-day shadow outage in 2026-04 went undetected because no surface flagged
 # staleness. Tiered thresholds tuned for this engine's actual cadence:
