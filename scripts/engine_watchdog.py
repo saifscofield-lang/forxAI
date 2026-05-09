@@ -107,17 +107,22 @@ def count_engine_processes() -> int:
     """Return number of running paper_trade.py python processes — scoped to
     the forexAI project path (GAP-OPS-02).
 
-    Without the path filter, the watchdog also counts paper_trade.py in
-    other Python projects on the same machine (e.g. SynthAI on Deriv has
-    its own paper_trade.py). That makes the duplicate-PID alert fire
-    permanently as long as both projects run. Filtering on the
-    `D:\\forexAI` path in CommandLine restricts the count to this
-    project's processes only."""
+    The discriminator is `ExecutablePath` (the full path to python.exe)
+    rather than CommandLine — when the engine is started via the .bat
+    wrapper, CommandLine is just `python scripts\\paper_trade.py` with
+    no working-directory hint, so a CommandLine LIKE '%forexAI%' filter
+    incorrectly returns zero. ExecutablePath, however, is `D:\\forexAI\\
+    venv\\Scripts\\python.exe` (or a similar resolved venv path), which
+    reliably contains the project name.
+
+    Initial fix shipped 2026-05-08 used CommandLine; corrected the same
+    day to ExecutablePath after live verification showed the broken
+    filter was returning 0 for actual running engines."""
     try:
         result = subprocess.run(
             ["wmic", "process", "where",
              "Name='python.exe' and CommandLine like '%paper_trade.py%' "
-             "and CommandLine like '%forexAI%'",
+             "and ExecutablePath like '%forexAI%'",
              "get", "ProcessId"],
             capture_output=True, text=True, timeout=8,
         )
