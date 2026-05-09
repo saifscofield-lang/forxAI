@@ -82,6 +82,40 @@ A failed Phase 8 does not auto-restart. The reviewer decides:
 - Drop to Phase 8.5 (smaller scope, shorter window)
 - Escalate to architectural review (Phase 7-style)
 
+## Sample-size discipline — Phase 9 graduation criterion (added 2026-05-09)
+
+The Phase 8 H4 gate requires ≥ 30 closed trades. **30 trades is a
+sufficiency check, not a confidence check.** Statistically, the
+standard error on win rate at n=30 is roughly ±9 percentage points,
+and profit factor estimates have heavy-tailed noise. A system passing
+the 30-trade gate could still be edge-neutral or net-negative in
+true expectation.
+
+This is acceptable for Phase 8 because Phase 9.1 launches with
+**small capital** ($2,000) — the live phase IS the longer evaluation.
+But to prevent escalating capital on under-validated evidence, the
+following Phase 9 graduation rule is added:
+
+### Phase 9 graduation gate (between 9.1 → 9.2 / 9.3)
+
+| Stage | Capital | Risk per trade | Trade count required to advance |
+|---|---|---|---|
+| 9.1 | $2,000 | 0.3% | open |
+| 9.2 | $2,000 → up | 0.5% | **≥ 100 cumulative closed trades since 9.1 start** with R-PF ≥ 1.30 across them |
+| 9.3 (scaling) | $5K+ | per plan | **≥ 200 cumulative closed trades** with R-PF ≥ 1.30 + Sharpe ≥ 0.5 |
+
+The 100-trade bar is roughly the inflection point where the WR
+standard error drops below ±5pp and a directional claim about edge
+becomes meaningfully supported. The 200-trade bar approaches stable
+profit-factor estimation territory.
+
+**This is not a Phase 8 gate.** It only governs scaling decisions
+after live trading begins. Phase 8 keeps the 30-trade H4 gate.
+
+If trade frequency is low (e.g., 30 trades took 6 weeks → 100 trades
+projects ~5 months), capital advancement is delayed accordingly.
+Don't lower the trade-count bar to fit a calendar.
+
 ## Caveats noted today (2026-05-08)
 
 1. **GAP-FID-01/02/04** plumbing for slippage / commission / swap
