@@ -26,7 +26,9 @@ from apscheduler.triggers.cron import CronTrigger
 
 from engine.trading_engine import TradingEngine
 from strategies.sma_crossover import SMACrossoverStrategy
-from strategies.rsi_reversal import RSIReversalStrategy
+# RSIReversalStrategy retired 2026-06-03 (Rescue Phase 3a — mean-reversion premise
+# empirically false). See registration block + docs/research/rsi_retirement_2026_06_03.md
+# from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
 # MLDirectStrategy retired 2026-06-02 (Rescue Phase 2 — no directional edge). See
 # registration block below + docs/research/ml_direct_retirement_2026_06_02.md
@@ -114,13 +116,25 @@ def create_strategies(config):
             added.append("SMA")
 
         # RSI Reversal
-        if is_approved("rsi_reversal"):
-            strategies.append(RSIReversalStrategy(
-                symbol=symbol, rsi_period=14,
-                oversold=30.0, overbought=70.0,
-                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-            ))
-            added.append("RSI")
+        # RETIRED 2026-06-03 (Rescue Phase 3a). The mean-reversion premise is
+        # empirically FALSE on this data: after RSI<30 price drifts -0.027 ATR
+        # (expected +bounce), after RSI>70 +0.029 ATR (expected -fall) — 51-52%,
+        # a faint CONTINUATION bias, the opposite of reversion. No regime
+        # (trending PF 0.77), no parameter config (best 0.84), and no walk-forward
+        # block (0.61/0.77/0.90) clears PF 1.0. Consistent with the finding that
+        # H1/M15 FX rewards momentum, not mean-reversion (MACD survives; RSI +
+        # bollinger, both reversion, both failed). See
+        # docs/research/rescue_phase3a_rsi_diagnosis.md and decision doc
+        # docs/research/rsi_retirement_2026_06_03.md
+        # Re-enabling requires a config with OOS PF > 1.0 across walk-forward
+        # blocks — which this diagnosis could not find.
+        # if is_approved("rsi_reversal"):
+        #     strategies.append(RSIReversalStrategy(
+        #         symbol=symbol, rsi_period=14,
+        #         oversold=30.0, overbought=70.0,
+        #         atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        #     ))
+        #     added.append("RSI")
 
         # MACD Crossover
         if is_approved("macd_crossover"):
