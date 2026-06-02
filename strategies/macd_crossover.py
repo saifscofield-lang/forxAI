@@ -19,12 +19,18 @@ class MACDCrossoverStrategy:
         atr_period: int = 14,
         atr_sl_multiplier: float = 2.5,
         atr_tp_multiplier: float = 3.5,
+        timeframe: str = "M15",
     ):
         self.name = "macd_crossover"
         self.symbol = symbol
         self.atr_period = atr_period
         self.atr_sl_multiplier = atr_sl_multiplier
         self.atr_tp_multiplier = atr_tp_multiplier
+        # Rescue Phase 1f (2026-06-02): MACD validated on M15 — ~4.8x more trades
+        # at PF 1.03 (vs 1.00 on H1), all filters kept. The engine routes
+        # generate_signal() to this timeframe's bars. See
+        # docs/research/rescue_phase1f_m15_validation.md
+        self.timeframe = timeframe
 
     def generate_signal(self, df: pd.DataFrame) -> dict | None:
         tmp = df.copy()

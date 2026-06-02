@@ -423,6 +423,12 @@ class TradingEngine:
             df_h4 = self.adapter.get_ohlcv(symbol, secondary_tf, 200)
             df_m15 = self.adapter.get_ohlcv(symbol, confirm_tf, 100)
 
+            # Rescue Phase 1f: signal-grade M15 bars (enough history for EMA200)
+            # for strategies that declare timeframe="M15" (e.g. macd_crossover).
+            # Fetched once per symbol and routed below; H1 stays the default.
+            df_m15_signal = self.adapter.get_ohlcv(symbol, "M15", bars)
+            tf_data = {primary_tf: df_h1, "H1": df_h1, "M15": df_m15_signal}
+
             # ── Build market context ──
             market_ctx = self._build_market_context(symbol, df_h1, df_h4, df_m15)
 
@@ -509,8 +515,14 @@ class TradingEngine:
                     sma_diag = self._diagnose_sma(df_h1, strategy)
                     detail.update(sma_diag)
 
-                # Generate signal FIRST — before any filtering
-                signal = strategy.generate_signal(df_h1)
+                # Generate signal FIRST — before any filtering.
+                # Route to the strategy's declared timeframe (default H1).
+                strat_tf = getattr(strategy, "timeframe", "H1")
+                df_signal = tf_data.get(strat_tf, df_h1)
+                if df_signal is None or df_signal.empty:
+                    logger.warning(f"[{symbol}] No {strat_tf} data for {getattr(strategy,'name','?')}, skipping")
+                    continue
+                signal = strategy.generate_signal(df_signal)
                 if not signal:
                     continue
 
