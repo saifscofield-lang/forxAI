@@ -28,7 +28,9 @@ from engine.trading_engine import TradingEngine
 from strategies.sma_crossover import SMACrossoverStrategy
 from strategies.rsi_reversal import RSIReversalStrategy
 from strategies.macd_crossover import MACDCrossoverStrategy
-from strategies.ml_direct_strategy import MLDirectStrategy
+# MLDirectStrategy retired 2026-06-02 (Rescue Phase 2 — no directional edge). See
+# registration block below + docs/research/ml_direct_retirement_2026_06_02.md
+# from strategies.ml_direct_strategy import MLDirectStrategy
 
 try:
     from strategies.ml_filtered_strategy import MLFilteredStrategy
@@ -135,13 +137,24 @@ def create_strategies(config):
         # were never approved in any backtest profile. See decision_log.md.
 
         # ML Direct Strategy
-        ml_strat = MLDirectStrategy(
-            symbol=symbol, confidence_threshold=0.55,
-            atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-        )
-        if ml_strat.model is not None:
-            strategies.append(ml_strat)
-            added.append("ML")
+        # RETIRED 2026-06-02 (Rescue Phase 2). Evidence: the model has NO edge as a
+        # direction predictor (calibration flat ~39% win across all confidence bins,
+        # EV ~ -0.05 ATR) AND no edge when rebuilt as a meta-labeling trade filter
+        # (filter AUC 0.468 < 0.50, gated PF < ungated in all folds). Root cause:
+        # the features predict VOLATILITY (AUC ~0.80) not DIRECTION (AUC ~0.51,
+        # validated leakage-free). A directional ML edge is not present in these
+        # features. See docs/research/rescue_phase2a/2b/2c + ml_direct_rebuild_design.md
+        # and decision doc docs/research/ml_direct_retirement_2026_06_02.md
+        # Re-enabling requires: genuinely directional inputs (multi-TF structure,
+        # order-flow/COT, cross-pair lead-lag) AND OOS edge > break-even per the
+        # acceptance criteria in the rebuild design doc.
+        # ml_strat = MLDirectStrategy(
+        #     symbol=symbol, confidence_threshold=0.55,
+        #     atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        # )
+        # if ml_strat.model is not None:
+        #     strategies.append(ml_strat)
+        #     added.append("ML")
 
         # ML Filtered Strategy
         # RETIRED 2026-04-28 per Vote 5 (high-WR/low-R:R pathology, n=22, PF=0.23,
