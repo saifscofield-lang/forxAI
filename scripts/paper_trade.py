@@ -25,7 +25,9 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from engine.trading_engine import TradingEngine
-from strategies.sma_crossover import SMACrossoverStrategy
+# SMACrossoverStrategy retired 2026-06-03 (Rescue Phase 3b/3c — thin edge, intrinsically
+# low-frequency). See registration block + docs/research/sma_retirement_2026_06_03.md
+# from strategies.sma_crossover import SMACrossoverStrategy
 # RSIReversalStrategy retired 2026-06-03 (Rescue Phase 3a — mean-reversion premise
 # empirically false). See registration block + docs/research/rsi_retirement_2026_06_03.md
 # from strategies.rsi_reversal import RSIReversalStrategy
@@ -108,12 +110,23 @@ def create_strategies(config):
             return f"{symbol}_{strat_name}" in approved
 
         # SMA Crossover
-        if is_approved("sma_crossover"):
-            strategies.append(SMACrossoverStrategy(
-                symbol=symbol,
-                atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
-            ))
-            added.append("SMA")
+        # RETIRED 2026-06-03 (Rescue Phase 3b/3c). SMA has a real but THIN trend
+        # edge (H1 20/50 PF ~1.10; ADX>25-gated PF ~1.36) — unlike RSI/ml_direct it
+        # is not edgeless. But it is intrinsically LOW-FREQUENCY (~9 trades/symbol-yr
+        # ungated, ~3 when gated to strong trends), so it cannot meaningfully serve
+        # the trade-accumulation goal, and its raw 1.10 PF is spread-fragile. Owner
+        # decision: retire and concentrate the trend edge on MACD-M15 rather than
+        # keep a marginal low-volume contributor. See
+        # docs/research/rescue_phase3b_sma_diagnosis.md,
+        # rescue_phase3c_sma_gate_validation.md, sma_retirement_2026_06_03.md
+        # Re-enabling option: ADX>=20 gate (PF 1.18, all walk-forward folds positive)
+        # if a low-volume quality contributor is later wanted.
+        # if is_approved("sma_crossover"):
+        #     strategies.append(SMACrossoverStrategy(
+        #         symbol=symbol,
+        #         atr_sl_multiplier=sl_mult, atr_tp_multiplier=tp_mult,
+        #     ))
+        #     added.append("SMA")
 
         # RSI Reversal
         # RETIRED 2026-06-03 (Rescue Phase 3a). The mean-reversion premise is
