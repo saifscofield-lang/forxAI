@@ -26,10 +26,14 @@ class MACDCrossoverStrategy:
         self.atr_period = atr_period
         self.atr_sl_multiplier = atr_sl_multiplier
         self.atr_tp_multiplier = atr_tp_multiplier
-        # Rescue Phase 1f (2026-06-02): MACD validated on M15 — ~4.8x more trades
-        # at PF 1.03 (vs 1.00 on H1), all filters kept. The engine routes
-        # generate_signal() to this timeframe's bars. See
-        # docs/research/rescue_phase1f_m15_validation.md
+        # Rescue Phase 1f (2026-06-02): M15 chosen for ~4.8x trade frequency vs H1,
+        # all filters kept. The engine routes generate_signal() to this timeframe.
+        # ⚠️ Rescue Phase 5b (2026-06-03): on the FULL ~100k-bar M15 sample the edge
+        # is NOT confirmed — clean PF 0.98, PF_net 0.86 after spread/slippage, only
+        # 1/8 walk-forward folds and 1/7 symbols net-profitable. The "PF 1.03" in 1f
+        # was a recent-tail artifact. M15 still gives more EVALUABLE trades (its
+        # purpose), but this signal has no cost-survivable edge — do NOT scale capital
+        # on it. See docs/research/rescue_phase5b_macd_m15_revalidation.md
         self.timeframe = timeframe
 
     def generate_signal(self, df: pd.DataFrame) -> dict | None:
