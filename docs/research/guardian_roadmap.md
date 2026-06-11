@@ -124,8 +124,32 @@ Never relax a gate in place. Never let the analysis rewrite the exam it just fai
       flag/explain only, never PASS).
 - [x] **S5** — Seeded `data/hypothesis_registry.jsonl` (10 past hypotheses, K=10); ran
       validation — **both golden cases reproduced ✅**. (Not yet git-committed.)
-- [ ] **S6 (next)** — Workflow on top: worker + veto panel + DSR counter + data
-      separation; runs in sandbox; **halts at HUMAN GATE 1** producing a ready pre-reg.
+- [~] **S6 (in progress)** — Workflow on top. **Stage 1 built + the deterministic bridge:**
+      - `research/guardian/canonical.py` — canonical G1–G8 template + `assess()` (reads
+        registry K, runs the engine). The verdict bridge — no LLM in the verdict path.
+      - `scripts/guardian_assess.py` — CLI the verdict stage calls (input JSON → verdict
+        report). Validated on a synthetic clean candidate (PASS, K=11).
+      - `.claude/workflows/research-lab-prereg.workflow.js` — **Stage 1** autonomous
+        workflow: novelty-check vs the failure registry → author a frozen pre-reg →
+        **HALT at HUMAN GATE 1**. Never backtests, never reads holdout, never touches
+        capital. (Invocable via `Workflow{name:'research-lab-prereg', args:'<idea>'}` —
+        running it requires the owner's explicit opt-in.)
+      - [ ] **Stage 2 (verdict)** — to build when a frozen pre-reg exists: Builder writes
+        ONLY the signal fn into the frozen harness → deterministic backtest on
+        Discovery/train → `guardian_assess.py` → veto panel (4 lenses) → **HALT at HUMAN
+        GATE 2** (cross to holdout?). Design below.
+
+### S6 Stage 2 — verdict workflow (design, not yet built)
+Runs only AFTER a human freezes + commits a pre-reg (HUMAN GATE 1 passed). Steps:
+1. **Builder** writes the strategy's signal function only, plugged into the frozen backtest
+   harness (it may not touch the data loader, cost model, gates, or universe).
+2. **Deterministic backtest** on Discovery/train data → raw metrics JSON.
+3. **`guardian_assess.py`** → PASS/FAIL verdict + flags (the computed truth).
+4. **Veto panel** — 4 critic agents (Statistician, Regime, Cost, Robustness), each owns one
+   failure mode, each can VETO, none can approve. Any veto = FAIL.
+5. **HALT at HUMAN GATE 2** — a PASS + clean panel produces a recommendation to cross to the
+   locked holdout; the human decides. A gate-defect flag routes to a NEW pre-reg, never
+   relaxes the verdict.
 
 ### S0–S5 result (2026-06-11)
 `validate_guardian.py` green. Carry FAIL`[C1,C3,C4,C5]` + DEF-2 single-regime flag (DSR
