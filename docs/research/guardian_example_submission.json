@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "hypothesis_id": "example_my_strategy",
+    "title": "وصف استراتيجيتك هنا",
+    "economic_rationale": "اشرح لماذا يوجد edge — السبب الاقتصادي/السلوكي. اتركه فارغا = فشل البوابة G1.",
+    "prereg_commit": ""
+  },
+  "metrics": {
+    "mean_period": 0.0025,
+    "t_stat": 2.80,
+    "sharpe_ann": 0.75,
+    "n_obs": 200,
+    "mpy": 12,
+    "skew": 0.0,
+    "kurtosis": 3.0,
+    "oos": { "mean": 0.0021, "sharpe": 0.50, "drift_p": 0.30 },
+    "regimes": { "regime_A": 0.0024, "regime_B": 0.0027 },
+    "breadth": { "n_positive": 5, "n_total": 8 },
+    "cost": { "net_mean_1x": 0.0025, "net_mean_1_5x": 0.0023, "pf_net": 1.20 },
+    "diversification": { "enb": 4.0, "pc1": 0.30, "max_corr": 0.55, "n_instruments": 8 },
+    "beats_passive": true
+  }
+}
