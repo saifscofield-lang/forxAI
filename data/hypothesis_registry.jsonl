@@ -1,0 +1,10 @@
+{"hypothesis_id": "ml_direct", "title": "ML directional edge (price-only)", "verdict": "FAIL", "prereg_commit": "", "note": "no directional edge; confidence flat ~39%, break-even 40%", "recorded": "2026-06-02"}
+{"hypothesis_id": "rsi_reversal", "title": "RSI mean-reversion", "verdict": "FAIL", "prereg_commit": "", "note": "mean-reversion premise empirically false", "recorded": "2026-06-02"}
+{"hypothesis_id": "sma_crossover", "title": "SMA20/50 crossover", "verdict": "FAIL", "prereg_commit": "", "note": "edge too thin, low-frequency", "recorded": "2026-06-02"}
+{"hypothesis_id": "donchian_breakout", "title": "Donchian breakout", "verdict": "FAIL", "prereg_commit": "", "note": "premise inverted (FX fades breakouts); never built", "recorded": "2026-06-02"}
+{"hypothesis_id": "macd_m15", "title": "MACD on M15", "verdict": "FAIL", "prereg_commit": "", "note": "PF_net 0.857 after costs; 1/8 folds, 1/7 symbols net-positive", "recorded": "2026-06-02"}
+{"hypothesis_id": "macd_m15_d1filter", "title": "MACD M15 + D1 trend filter", "verdict": "FAIL", "prereg_commit": "", "note": "best variant PF_net 0.898; fails 3/4 gates", "recorded": "2026-06-02"}
+{"hypothesis_id": "xauusd_d1", "title": "XAUUSD + D1 trend filter", "verdict": "FAIL", "prereg_commit": "", "note": "failed 4/5 pre-reg gates; X2 walk-forward 5/8", "recorded": "2026-06-03"}
+{"hypothesis_id": "crypto_tsmom", "title": "Crypto momentum (Phase 10)", "verdict": "FAIL", "prereg_commit": "", "note": "OOS validation RED; drift-stability gate fails", "recorded": "2026-04-21"}
+{"hypothesis_id": "phase11_carry", "title": "FX carry / rate-differential premium", "verdict": "FAIL", "prereg_commit": "01770f4", "note": "failed C1,C3,C4,C5; single-regime artifact (USDJPY hiking)", "recorded": "2026-06-02"}
+{"hypothesis_id": "phase12_trend", "title": "Cross-asset trend premium (TSMOM)", "verdict": "FAIL", "prereg_commit": "9fa6ee2", "note": "failed D5 (mis-specified max-corr gate); 5/6 evidence gates strong", "recorded": "2026-06-03"}
