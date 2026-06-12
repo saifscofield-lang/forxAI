@@ -1,0 +1,135 @@
+{
+  "hypothesis_id": "vrp_short_vol",
+  "title": "Volatility Risk Premium \u2014 tradable defined-risk short vol (short VXX)",
+  "economic_rationale": "Variance risk premium (Bakshi-Kapadia, Carr-Wu): implied>realized vol insurance premium; short-vol ETP decay harvests it. Non-price signal.",
+  "prereg_commit": "cec6279",
+  "declared_gates": [
+    {
+      "id": "G1",
+      "kind": "threshold",
+      "desc": "economic rationale",
+      "path": "economic_rationale_present",
+      "op": "==",
+      "th": true
+    },
+    {
+      "id": "G2",
+      "kind": "all_of",
+      "desc": "significance mean>0 & t>=2.0",
+      "subs": [
+        {
+          "path": "mean_period",
+          "op": ">",
+          "th": 0.0
+        },
+        {
+          "path": "t_stat",
+          "op": ">=",
+          "th": 2.0
+        }
+      ]
+    },
+    {
+      "id": "G3",
+      "kind": "dsr",
+      "desc": "Deflated Sharpe @K=12",
+      "alpha": 0.95
+    },
+    {
+      "id": "G4",
+      "kind": "all_of",
+      "desc": "OOS robustness",
+      "subs": [
+        {
+          "path": "oos.mean",
+          "op": ">",
+          "th": 0.0
+        },
+        {
+          "path": "oos.sharpe",
+          "op": ">=",
+          "th": 0.3
+        },
+        {
+          "path": "oos.drift_p",
+          "op": ">",
+          "th": 0.05
+        }
+      ]
+    },
+    {
+      "id": "G5",
+      "kind": "all_positive",
+      "desc": "all vol-regimes positive (['vix_low', 'vix_mid', 'vix_high'])",
+      "path": "regimes"
+    },
+    {
+      "id": "G6",
+      "kind": "threshold",
+      "desc": ">=55% months positive",
+      "path": "months_positive_pct",
+      "op": ">=",
+      "th": 0.55
+    },
+    {
+      "id": "G7",
+      "kind": "all_of",
+      "desc": "tail+cost: net@1.5x>0, MDD<30%, beats passive",
+      "subs": [
+        {
+          "path": "cost.net_mean_1_5x",
+          "op": ">",
+          "th": 0.0
+        },
+        {
+          "path": "tail.mdd",
+          "op": "<",
+          "th": 0.3
+        },
+        {
+          "path": "beats_passive",
+          "op": "==",
+          "th": true
+        }
+      ]
+    },
+    {
+      "id": "G8",
+      "kind": "threshold",
+      "desc": "no leverage / defined-risk",
+      "path": "no_leverage",
+      "op": "==",
+      "th": true
+    }
+  ],
+  "metrics": {
+    "economic_rationale_present": true,
+    "mean_period": -0.006927410816645873,
+    "t_stat": -2.242477725808073,
+    "sharpe_ann": -0.9154876979644372,
+    "n_obs": 72,
+    "mpy": 12,
+    "skew": 0.17587818441713896,
+    "kurtosis": 3.7337275905171303,
+    "oos": {
+      "mean": -0.003663311249098126,
+      "sharpe": -0.592890610758435,
+      "drift_p": 1.0
+    },
+    "regimes": {
+      "vix_low": -0.008886001495740162,
+      "vix_mid": -0.004311521955488024,
+      "vix_high": -0.0044695893260935145
+    },
+    "months_positive_pct": 0.2361111111111111,
+    "cost": {
+      "net_mean_1_5x": -0.007276306601904891,
+      "pf_net": 0.46021227930966363
+    },
+    "tail": {
+      "mdd": 0.4229778441196157
+    },
+    "beats_passive": false,
+    "no_leverage": true
+  }
+}
