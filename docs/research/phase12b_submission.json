@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "hypothesis_id": "phase12_trend",
+    "title": "Cross-asset trend premium (TSMOM) — corrected-gate diagnostic",
+    "economic_rationale": "A persistent trend-following premium exists across asset classes after costs (TSMOM). Behavioral under-reaction + risk-premium for bearing trend risk; documented across futures since the 1980s.",
+    "prereg_commit": "9fa6ee2"
+  },
+  "metrics": {
+    "mean_period": 0.002200,
+    "t_stat": 3.36,
+    "sharpe_ann": 0.67,
+    "n_obs": 305,
+    "mpy": 12,
+    "skew": 0.0,
+    "kurtosis": 3.0,
+    "oos": { "mean": 0.001787, "sharpe": 0.57, "drift_p": 0.34 },
+    "regimes": { "half1": 0.00211, "half2": 0.00229, "era_pre2015": 0.00239, "era_2015plus": 0.00197 },
+    "breadth": { "n_positive": 6, "n_total": 7 },
+    "cost": { "net_mean_1x": 0.002200, "net_mean_1_5x": 0.002184, "pf_net": 1.15 },
+    "diversification": { "enb": 12.27, "pc1": 0.17, "max_corr": 0.93, "n_instruments": 26 },
+    "beats_passive": true
+  }
+}

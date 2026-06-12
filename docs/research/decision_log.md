@@ -378,3 +378,37 @@ These four decisions fully unblock the May 18 meta-labeler training week. Before
 Phase 7 BLOCKING (OPEN + IN_PROGRESS) drops to **0** with AI-017 → DONE. AI-001 remains IN_PROGRESS but its resolution path (Path D = Phase 7 ship gate) is now decided rather than open, so it's no longer "blocking the kickoff agenda" in the original sense.
 
 Phase 8 BLOCKING (OPEN + IN_PROGRESS) drops to **1** (just GAP-OPS-01, deferred per project lead).
+
+---
+
+## 2026-06-12 — Live paper-trading log analysis (Mar 18 → Jun 5) + ml_direct revival REJECTED
+
+**Decided by:** Claude Code analysis + project lead, after pulling the LIVE `trading_snapshot.db` (170 MB, runs through 2026-06-05) from the trading machine via Google Drive into `D:\forexAI\workpc\worklogs_bundle\`. The on-ASUS `data/trading.db` was stale (stopped 2026-03-27); this is the first analysis on the real live data in months.
+
+**Why this analysis ran:** project lead asked "what should I do today"; the thread led to "why did paper trading stop collecting signals". Investigation found the live engine kept scanning but signal generation collapsed.
+
+### Findings (numbers, with SQL behind each)
+- **Three regimes, shifting bottleneck:** March (old engines null/2.0/2.1) active but killed by SETUP BUGS; April (v2.4) active (172 trades) but −40% drawdown (balance 118k→71k); **May–June starved** — 507 scans in May produced only **15 signals** (April had 317), June **1**. The engine was RUNNING; the strategies stopped emitting.
+- **Rejection split (375 RISK_REJECTED of 728 signals, exec rate 45.5%):** Bucket A (legitimate filters) 304 / 81% — H4-trend 79, session 63 (XAUUSD 24), one-per-symbol 52, portfolio cap 37, correlation cap 29. Bucket B (setup bugs) 62 / 16.5% — `Unsupported filling mode` (24) + `AutoTrading disabled` (21) + `No money` (10), **ALL March-only, already fixed**. Bucket C 9.
+- **PnL (all engines):** macd_crossover +16.4k (70.7% WR), rsi_reversal +4.8k, ml_direct +2.3k (76% WR but avgLoss −2655 = fat left tail), ml_filtered_sma −5.1k, bollinger_bounce −7.2k. In v2.4 only: ml_direct +10.8k is the only "winner"; bollinger (−3.1k) + ml_filtered_sma (−5.0k) eat most of it → v2.4 net +2.3k.
+
+### Decision: ml_direct stays RETIRED — revival REJECTED
+An initial recommendation to "retrain/fix ml_direct" (it looked like the only live winner) was **RETRACTED** after reading `ml_direct_retirement_2026_06_02.md` and the Path D decision (2026-05-06). The live "+10.8k @75% WR" is **luck, not edge** — the fat-tail avgLoss −2655 is the exact signature of a no-edge strategy with asymmetric exits. Direction AUC ≈ 0.51 (validated leakage-free). **Rationale:** reviving contradicts a deliberate, evidence-based retirement; the re-enable bar (genuinely directional inputs + OOS edge > break-even) is unmet; retraining on the same features is explicitly forbidden. The May/June starvation is therefore **the EXPECTED result of correct research conclusions** (the strategy roster was correctly pruned to ~nothing), not a bug to fix.
+
+### Corollary finding
+The intended frequency replacement **MACD-M15 also failed validation** (git `ab26b0b`, Phase 5b, all 4 gates). NET: **there is currently NO validated deployable positive-edge strategy** — only macd_crossover H1 retains a thin edge (PF ~1.10, ADX-gated ~1.36).
+
+### Next action — APPROVED 2026-06-12 by project lead
+Stop resurrecting dead live strategies. Commit to the research track and **resolve Phase 12b via the Guardian lab** — the only lead with positive evidence (Trend DSR 0.961 passes the corrected canonical gates, dies only on the mis-specified D5 max-corr). Run it SOON: DSR margin is thin (PASS at K=10/11/12, FAIL at K≥15). In parallel, formally acknowledge the live demo system has no validated edge (stop treating "v3 paper trading" as a live stable segment).
+
+**Approval (2026-06-12):** project lead said "ابدأ بـ Phase 12b". Stage 1 launched = `research-lab-prereg` to author a FROZEN pre-registration for the corrected cross-asset trend re-test (within-class redundancy handled as a frozen ex-ante one-instrument-per-sub-cluster construction step; explicit disclosure that it re-uses partially-seen Discovery data; correction is correlation-based, not performance-based). Workflow HALTS at HUMAN GATE 1 — no backtest, no holdout, no capital — pending project-lead freeze+commit of the pre-reg.
+
+**Stage 1 result (2026-06-12):** Novelty check = `worth_a_test` (novel, sources its edge in the academic trend/momentum premium; resembles phase12_trend but is its corrected re-test, not a new data-mine). Pre-reg authored and FROZEN at `docs/research/phase12b_trend_prereg.md`. Key frozen design: universe pruned ex-ante 26→**20 instruments** (drop NQ/ZB/ZF/BZ/GBP within-class duplicates by liquidity, not results); identical monthly TSMOM, no tuning; canonical gates **G1–G8** (max-corr demoted from result gate to construction diagnostic); train 2001-01..2024-06; **locked OOS holdout 2024-07..2026-06**; binding decision rule (any gate fail = FAIL, no relaxation/re-tune/post-hoc defect re-analysis); registered as trial **K=11**.
+
+**HUMAN GATE 1 — APPROVED 2026-06-12.** Project lead chose "freeze and run, no line-by-line review" (the pre-reg is internally consistent; the only real caveat — partial reuse of partially-seen yfinance data — is disclosed in §8). Freeze actions: (1) commit `phase12b_trend_prereg.md` to git; (2) append `phase12b_trend` to `data/hypothesis_registry.jsonl` (K→11); (3) run the 20-instrument backtest on the train window + `scripts/guardian_assess.py` for the deterministic verdict; (4) cross to the locked OOS holdout ONLY if all 8 gates pass on train. NOTE this is a fresh backtest on the pruned universe — the earlier DSR 0.961 was on the OLD 26-instrument full-data metrics; Phase 12b recomputes.
+
+### Artifacts
+- `D:\forexAI\workpc\worklogs_bundle\` — live snapshot DB + logs + config + incoming_summary.md
+- memory `project-paper-trading-analysis`
+- `CLAUDE.md` current-state block updated 2026-06-12
+- Guardian verdict: `docs/research/phase12b_submission.json` → PASS under canonical G1-G8 (run via `scripts/guardian_assess.py`)
