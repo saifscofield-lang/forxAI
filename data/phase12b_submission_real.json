@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "hypothesis_id": "phase12b_trend",
+    "title": "Cross-asset trend premium (TSMOM) \u2014 corrected re-test (21-instr pruned, canonical G1-G8)",
+    "economic_rationale": "Documented cross-asset trend/momentum risk premium (Moskowitz, Ooi, Pedersen 2012); time-series momentum across diversified asset classes earns a return not explained by conventional risk. Within-class duplicates pruned ex-ante by liquidity; canonical gates omit max-corr as a result gate.",
+    "prereg_commit": "d7b2910"
+  },
+  "metrics": {
+    "mean_period": 0.0020952484056334956,
+    "t_stat": 3.0187574728877706,
+    "sharpe_ann": 0.6238291813865615,
+    "n_obs": 281,
+    "mpy": 12,
+    "skew": -0.14480337734934634,
+    "kurtosis": 3.7965747760609005,
+    "oos": {
+      "mean": 0.0026072810310072184,
+      "sharpe": 0.9000883805983497,
+      "drift_p": 1.0
+    },
+    "regimes": {
+      "half1": 0.002061561898410154,
+      "half2": 0.0021286960014580904,
+      "era_pre2015": 0.002432393762577325,
+      "era_2015plus": 0.001601360031864903
+    },
+    "breadth": {
+      "n_positive": 6,
+      "n_total": 7
+    },
+    "cost": {
+      "net_mean_1x": 0.0020952484056334956,
+      "net_mean_1_5x": 0.0020791776522115584,
+      "pf_net": 1.5984333673242306
+    },
+    "diversification": {
+      "enb": 12.05,
+      "pc1": 0.15,
+      "max_corr": 0.7,
+      "n_instruments": 21
+    },
+    "beats_passive": true
+  }
+}
