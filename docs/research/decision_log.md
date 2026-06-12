@@ -416,6 +416,22 @@ Backtest on the 21-instrument pruned universe, train window 2001-02..2024-06 (28
 
 **Conclusion — the cross-asset trend premium is now CLOSED, properly.** Both things are true: D5 was a defect (Phase 12's stated failure was mis-attributed) AND the phenomenon is not strong enough to survive a correctly-specified deflated-Sharpe penalty. The trend thread ends here on legitimate grounds, not on a technicality. Registry: `phase12b_trend` verdict PREREG→FAIL (K stays 11; trial counted). Artifacts: `docs/research/phase12b_trend_results.md`, `data/phase12b_submission_real.json`.
 
+---
+
+## 2026-06-12 — Phase 13 (VRP) — pre-registration FROZEN (first non-price hypothesis)
+
+**Decided by:** project lead, after a strategy discussion that (a) rejected single-instrument "gold specialization" and (b) chose the Volatility Risk Premium as the next test.
+
+**Why not gold (recorded so it is not revisited):** project lead asked "why not specialize on gold and build on it?" Answer, with live data: XAUUSD live = 107 SELL (+$8.3k, 68% WR) vs 16 BUY (−$2.7k, **19% WR**) — the gold "edge" is a one-directional bet on falling gold, not a two-sided edge (a real edge works both ways). `xauusd_d1` was already formally pre-registered and FAILED 4/5 gates (X2 walk-forward 5/8 — one symbol gives too few independent folds to separate edge from luck). External review (2026-04-28) called the whole system "one-sided, funded by an incidental window of bias × falling gold." "Specialize on gold" is a universe choice, not an edge, and single-instrument concentration WEAKENS the statistics. Gold remains a closed/cautionary thread unless a NON-price, economically-grounded gold hypothesis (gold vs real yields, CB/ETF flows, COT) is brought through the lab.
+
+**Why VRP:** derived from the failure taxonomy — all 11 prior trials are price-derived; VRP inverts the shared failure dimension (signal = implied-vs-realized vol from the options market, not price). Documented economic mechanism (variance risk premium / insurance demand), regime-robust by premise, strong enough (literature Sharpe ~0.8–1.2) to have headroom over the rising DSR bar.
+
+**Stage 1 (research-lab-prereg) result:** Novelty = `worth_a_test`, `novel=true`, `resembles=[]` (genuinely new; resembles no prior failure). Advisor flagged execution risk HIGH (DSR at K=12 binding; vol-regime risk) and required ex-ante: post-cost OOS Sharpe gate, all-vol-regime gate, volmageddon survival, explicit SPX-only scope — all incorporated.
+
+**Implementation tightening before freeze (Claude flagged, lead approved):** the Stage-1 draft harvested VRP via a *synthetic variance swap on the untradable `^VIX` index* — risks a circular "premium exists in the index" result. Tightened to trade the **real tradable short-vol ETPs**: PRIMARY = SHORT `VXX` (20% fixed-fractional sleeve = the defined-risk cap), `SVXY`-long as robustness cross-check; signal = `VRP_premium`>0 AND VIX-curve contango. Real prices embed real roll costs and the real Feb-2018/Mar-2020 tail (G7 tests survival on the actual series, MDD<30%). A PASS now means a tradable, cost-and-tail-surviving edge — not an index fact.
+
+**HUMAN GATE 1 — APPROVED + FROZEN 2026-06-12.** Pre-reg `docs/research/phase13_vrp_prereg.md` committed (freezes gates). Registered `vrp_short_vol` in `data/hypothesis_registry.jsonl` (K→12). NEXT (Stage 2, separate step): build the frozen short-`VXX` backtest on train 2010..2023, run `scripts/guardian_assess.py` at K=12, open the locked OOS holdout (2024..2026) ONLY if all 8 gates pass on train. No tuning, no relaxation.
+
 ### Artifacts
 - `D:\forexAI\workpc\worklogs_bundle\` — live snapshot DB + logs + config + incoming_summary.md
 - memory `project-paper-trading-analysis`
