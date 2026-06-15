@@ -6,7 +6,7 @@
 >   البيانات، الخيارات. لا يكرّر إدخالات الجزء ب — يلخّصها ويشير إليها بالتاريخ.
 > - **الجزء ب — السجل الزمني** (append-only، لا تعدّل القديم): كل قرار مؤرّخ بالتفصيل.
 >
-> **آخر تحديث للجزء أ:** 2026-06-15 · **الفرع:** `main-Robot` · **السجل:** K=12، كل الـ12 فشل.
+> **آخر تحديث للجزء أ:** 2026-06-15 (Phase 13B VRP مؤجّل — بيانات محجوبة جغرافيًا؛ توقّف استراتيجي) · **الفرع:** `main-Robot` · **السجل:** K=12، كل الـ12 فشل.
 > مراجع متقاطعة: `data/hypothesis_registry.jsonl` · `data/DATA_MANIFEST.md` ·
 > `research/guardian/` + `scripts/guardian_assess.py` · `scripts/audit_data_quality.py`.
 
@@ -64,10 +64,11 @@
 `macd_crossover` H1: PF خام ~1.10، مع ADX ~1.36؛ حي +16.4k WR 70.7%. **هامش هشّ** —
 يُقترح كنظام تشغيلي متواضع + إدارة مخاطر، لا كحافة مُثبتة (قد لا ينجو من بوابات DSR).
 
-## أ.6) المسارات الاستراتيجية (القرار المفتوح)
-- **(أ) توقّف/تأمّل** ⭐ توصية Claude — المُخرَج = انضباط Guardian + المعرفة السلبية.
-- **(ب) زاوية أخيرة** — إعادة اختبار VRP ببيانات CBOE أطول (يرفع K=13، فخ "الاستمرار").
-- **(ج) تحويل الهدف** — تشغيل "الرقيق" macd H1+ADX كنظام حي متواضع.
+## أ.6) المسارات الاستراتيجية (الحالة: توقّف استراتيجي مُعتمَد 2026-06-15)
+- **(أ) توقّف/تأمّل** ✅ **المعتمَد حاليًا** — المُخرَج = انضباط Guardian + المعرفة السلبية.
+- **(ب) زاوية أخيرة (VRP عبر CBOE VX)** — جُرِّبت → **مؤجّلة**: البيانات محجوبة جغرافيًا (geo-block العراق + حجب datacenter)؛ تحتاج VPN/Norgate. التسجيل والـloader جاهزان للاستئناف (انظر إدخال 2026-06-15 في الجزء ب).
+- **(ج) تحويل الهدف** — تشغيل "الرقيق" macd H1+ADX كنظام حي متواضع (متاح لاحقًا إن أردت).
+- **خيار الاستئناف:** لو توفّر VPN/مصدر مدفوع → جلب VX → اختبارات الجودة الأربعة → إن طابقت، جمّد (K→13) وشغّل. دقائق لا إعادة بناء.
 - **خارج الصندوق:** غيّر بُعدًا من الثلاثة (تنبّؤ/سوق كفؤ/تردد عالٍ): (1) **تدفّق هيكلي**
   (month-end FX flows، rebalancing، expiry pinning) = ثنائي+منخفض التردد+اقتصادي، يعالج 3 جذور؛
   (2) سوق أقل كفاءة (factor premia في الأسهم)؛ (3) Guardian نفسه كمنتج.
@@ -96,6 +97,34 @@
 **Next action:** ...
 **Artifacts:** ...
 ```
+
+---
+
+## 2026-06-15 — Phase 13B (VRP re-test via CBOE VX) — DEFERRED (data access blocked)
+
+**Decided by:** project lead, after Stage-1 pre-reg authored + a data-availability probe.
+
+**Context.** Strategic direction (ب) chosen: re-test the variance risk premium on a longer, cleaner tradable series (CBOE VIX futures, 2004+) to settle whether the K=12 `vrp_short_vol` FAIL was a data-truncation artifact (VXX starts 2018-01, at Volmageddon) or a genuine no-edge. `research-lab-prereg` ran → novelty `worth_a_test` (novel, resembles `vrp_short_vol`); a frozen pre-reg draft was authored (K=13, inherits G1–G8, train 2004–2023, OOS 2024–2026 locked). **It was NOT committed and NOT registered — HUMAN GATE 1 held pending data verification first** (deliberate: don't burn K=13 on a hypothesis we can't feed).
+
+**Why deferred — data is access-blocked, not quality-poor.** Probes (`scripts/probe_cboe_vx.py`, `scripts/probe_vx_sources.py`):
+- CBOE CDN per-contract CSV (`cdn.cboe.com/.../VX/VX_<settle>.csv`) → **HTTP 403 from the trading machine** (full browser headers didn't help). Browser test revealed the cause: **Cloudflare Error 1009 — CBOE geo-bans Iraq (IQ)**. The 403s were the same geo-block.
+- WebFetch from Claude's US infra → **also 403** (CBOE additionally blocks datacenter IPs / bots).
+- Stooq → no clean continuous VX; Quandl/CHRIS CBOE_VX → deprecated 2023.
+- Net: **no free path to CBOE VX from the user's location or from Claude's side.** Unblock requires a user-side VPN (US/EU exit) or a paid vendor (Norgate). Claude cannot/should-not configure a VPN (no server/creds; public free servers = MITM risk on MT5 creds).
+
+**Decision: DEFER Phase 13B; do NOT register K=13; return to the strategic pause.** Rationale (Claude's recommendation, lead agreed):
+1. Single test, **low prior** — DSR bar at K=13 is very high (phase12b Sharpe 0.62 already failed at K=11; even textbook VRP may not clear it).
+2. Data is geo-blocked → cost (VPN/paid + engineering) outweighs the expected information gain of one low-odds test.
+3. The access difficulty is itself weak evidence against an easy, real, harvestable edge.
+4. Consistent with the standing recommendation (option أ): the project's durable deliverable is the **Guardian discipline + negative knowledge**, not a deployed strategy.
+
+**Nothing is lost / resume path.** The frozen pre-reg draft + the data-quality verification protocol (4 tests: coverage, provenance, **overlap-reconciliation vs the VXX we already trust on 2018–2026**, internal sanity) are documented. If a VPN/Norgate becomes available later: acquire VX → run the 4 quality tests → if it reconciles, commit the pre-reg (K→13) → backtest → `guardian_assess.py`. Minutes of work, not a restart.
+
+**Registry unchanged: K=12, all 12 FAIL.** `vrp_vix_futures` NOT appended (no test was run; no trial consumed).
+
+**Next action:** Strategic pause. No new hypothesis without a high economic-prior reason (each raises the DSR bar for all). See Part A §6.
+
+**Artifacts:** `scripts/probe_cboe_vx.py`, `scripts/probe_vx_sources.py`, `scripts/audit_data_quality.py`; workflow run `wf_d63cdc03-452` (Stage-1 pre-reg draft, uncommitted).
 
 ---
 

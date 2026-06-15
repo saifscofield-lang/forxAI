@@ -11,12 +11,22 @@ __pycache__/
 data/trading.db
 data/logs/
 data/raw/
+data/raw_trend/
+data/raw_vol/
+data/raw_crypto/
 data/processed/
 data/models/
 
 # نسخ احتياطية لقاعدة بيانات التتبع
 data/improvements.db.bak.*
 data/trading.db.bak.*
+data/*.db.bak
+
+# حزمة سجلات جهاز التداول (تحتوي trading_snapshot.db ~160MB)
+workpc/
+
+# نسخ محلية احتياطية
+*.local.bak.*
 
 # نسخ احتياطية قبل التغييرات الحرجة (تحتوي على trading.db ~150MB)
 backups/
