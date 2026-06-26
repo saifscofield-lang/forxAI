@@ -6,7 +6,7 @@
 >   البيانات، الخيارات. لا يكرّر إدخالات الجزء ب — يلخّصها ويشير إليها بالتاريخ.
 > - **الجزء ب — السجل الزمني** (append-only، لا تعدّل القديم): كل قرار مؤرّخ بالتفصيل.
 >
-> **آخر تحديث للجزء أ:** 2026-06-15 (Phase 13B VRP مؤجّل — بيانات محجوبة جغرافيًا؛ توقّف استراتيجي) · **الفرع:** `main-Robot` · **السجل:** K=12، كل الـ12 فشل.
+> **آخر تحديث للجزء أ:** 2026-06-15 (**تحوّل استراتيجي**: إغلاق مطاردة-الحافة كهدف أساسي → "الحصاد الهيكلي الصبور"؛ Phase 13B VRP مؤجّل لبيانات محجوبة) · **الفرع:** `main-Robot` · **السجل:** K=12، كل الـ12 فشل.
 > مراجع متقاطعة: `data/hypothesis_registry.jsonl` · `data/DATA_MANIFEST.md` ·
 > `research/guardian/` + `scripts/guardian_assess.py` · `scripts/audit_data_quality.py`.
 
@@ -64,8 +64,18 @@
 `macd_crossover` H1: PF خام ~1.10، مع ADX ~1.36؛ حي +16.4k WR 70.7%. **هامش هشّ** —
 يُقترح كنظام تشغيلي متواضع + إدارة مخاطر، لا كحافة مُثبتة (قد لا ينجو من بوابات DSR).
 
-## أ.6) المسارات الاستراتيجية (الحالة: توقّف استراتيجي مُعتمَد 2026-06-15)
-- **(أ) توقّف/تأمّل** ✅ **المعتمَد حاليًا** — المُخرَج = انضباط Guardian + المعرفة السلبية.
+## أ.6) المسارات الاستراتيجية (الحالة: تحوّل استراتيجي 2026-06-15)
+
+**🔄 التحوّل الحاكم (انظر إدخال "STRATEGIC PIVOT" في الجزء ب):** أُغلقت **مطاردة الحافة**
+كهدف أساسي (12/12 فشل + حلقة الاجتياز فخّ). الإطار الجديد = **الحصاد الهيكلي الصبور**:
+- **علاوة المخاطرة** — امتلك مؤشّرًا عالميًا واسعًا؛ الإشارة = أن تكون مستثمرًا.
+- **الشراء عند الذعر** — مؤشّر عالمي −20→35% + خوف متطرّف → اشترِ على دفعات، أفق 1–3 سنوات.
+- الثقة من **منطق اقتصادي + معدّل تاريخي واسع**، لا باكتيست مُفصّل. **استثمار لا مضاربة.**
+- قيود مجمّدة: ليست يقينًا (درس اليابان 1989 → تنويع عالمي + دفعات)؛ تحتاج رأس مال + انضباطًا عاطفيًا.
+- **$500/شهر = سؤال رأس مال** (~$100k × علاوة)، لا سؤال حافة.
+
+**المسارات القديمة (مرجع تاريخي):**
+- **(أ) توقّف/تأمّل** — كان المُخرَج = انضباط Guardian + المعرفة السلبية (لا يزال أصلًا باقيًا).
 - **(ب) زاوية أخيرة (VRP عبر CBOE VX)** — جُرِّبت → **مؤجّلة**: البيانات محجوبة جغرافيًا (geo-block العراق + حجب datacenter)؛ تحتاج VPN/Norgate. التسجيل والـloader جاهزان للاستئناف (انظر إدخال 2026-06-15 في الجزء ب).
 - **(ج) تحويل الهدف** — تشغيل "الرقيق" macd H1+ADX كنظام حي متواضع (متاح لاحقًا إن أردت).
 - **خيار الاستئناف:** لو توفّر VPN/مصدر مدفوع → جلب VX → اختبارات الجودة الأربعة → إن طابقت، جمّد (K→13) وشغّل. دقائق لا إعادة بناء.
@@ -97,6 +107,78 @@
 **Next action:** ...
 **Artifacts:** ...
 ```
+
+---
+
+## 2026-06-15 — STRATEGIC PIVOT — from "edge-hunting" to "patient structural harvesting"
+
+**Decided by:** project lead + Claude, in a strategy discussion after the Phase 13B deferral.
+
+**Why this entry exists.** This is not a go/no-go on a hypothesis — it is a change in the
+**project's governing philosophy**, recorded so future sessions inherit the new frame, not
+the old one. The old frame (find a clever, frequent, price-derived trading edge) is now
+**formally closed** as the project's primary goal — it produced 12/12 FAILs and the
+discussion below explains why continuing it is a trap.
+
+**Five conclusions reached (each closes a door, deliberately):**
+
+1. **Gate-passing as an objective = self-deception (REJECTED).** Proposal floated: give an
+   agent the goal "pass the Guardian gates," loop hypotheses + learn from the failure
+   registry until something passes. This is **search-induced overfitting / Goodhart /
+   reward-hacking the evaluator.** It WOULD eventually pass — by luck — and we'd deploy a
+   mirage that dies live. Three concrete leaks: (a) DSR's K undercounts the true search
+   (an auto-loop examines orders of magnitude more than it registers); (b) the locked OOS
+   holdout erodes the moment a loop re-opens it; (c) failure-steered trials are correlated,
+   so the effective number of independent tests is understated. **The value of Guardian is
+   precisely that it is NOT optimized against. This path is forbidden.**
+
+2. **"$500/month" is a CAPITAL question, not an alpha question.** $500/mo = $6k/yr. At the
+   normal market return (~6%), that needs **~$100k** of capital — i.e. it equals simply
+   *owning the market*, no edge required. On $5–10k it would need +60–120%/yr (effectively
+   impossible reliably). The reliable lever is **capital × risk-premium**, not cleverness.
+
+3. **Signal/bot sellers earn from SELLING, not from winning bots.** Their revenue is
+   subscriptions/courses/broker IB-rebates on followers' volume — independent of whether the
+   bot trades profitably. A *real, scalable* edge is never sold for $50/mo; you'd trade it.
+   **The act of selling an edge is evidence it isn't real.** We "failed" at their game only
+   because we refused to play it — Guardian blocks every trick it requires (cherry-picked
+   backtests, martingale-smooth-then-blowup, hidden drawdowns).
+
+4. **The honest ceiling (re-affirmed).** As a profit engine on the current foundation: low /
+   unreliable. As a platform/option: medium, conditional on a real catalyst (better data,
+   less-efficient market, genuine economic prior, more capital). As skills + reusable
+   methodology (Guardian) + you: high and certain. Measure the project by the third axis.
+
+5. **THE NEW WAY (the pivot itself).** Stop scanning for frequent clever entries. Adopt
+   **patient structural harvesting**: sit mostly in cash/index, act *rarely* and *decisively*
+   at **extremes**, with a long horizon. Confidence comes from a **documented economic
+   mechanism + a broad historical base rate across decades/markets — NOT from a backtest we
+   curve-fit.** High-probability signals are rare and live at the tails (the more frequent a
+   signal, the thinner its edge in an efficient market). The two pillars:
+   - **Risk premium** (own a broad global index; "signal" = be invested; near-certain
+     positive over 10y+).
+   - **Buy-the-panic** (the rare high-probability signal worth *waiting* for): broad global
+     index down ~20–35% + extreme fear/forced selling → buy **in tranches**, 1–3yr horizon.
+     Historically positive over 2–3yr in the large majority of cases. Caveats locked
+     ex-ante: **NOT certainty** (Japan 1989 → mandatory global diversification + tranching),
+     needs capital + emotional discipline; this is **investing, not trading**.
+
+**Binding discipline carried into the new track.** The same anti-overfitting rules apply:
+no parameter-tuning the panic threshold to "best" backtest output (that re-enters the
+mining trap); lean on robust, widely-documented base rates; act on economic logic. The
+moment we start optimizing thresholds for backtest beauty, we have relapsed.
+
+**Status of the old track.** CLOSED as primary goal. Registry frozen at **K=12, all FAIL**.
+Guardian + the negative-knowledge map remain the durable assets and stay reusable if a
+genuine new economic-prior hypothesis ever arrives.
+
+**Next action (agreed):** build the new "patient harvesting" frame into a concrete plan
+(global-index universe, panic-signal definition, tranche sizing, capital management), OR
+first confirm the buy-the-panic base rate as a *known fact* (not a mined parameter). Lead
+chose: document this pivot first (this entry), then proceed to the concrete plan.
+
+**Artifacts:** this discussion (session 2026-06-15); no code/registry change. Part A §6 of
+this log to be refreshed when the new plan is concretized.
 
 ---
 
